@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "327169711409",
+    "project_id": "cureai-7da2f",
+    "storage_bucket": "cureai-7da2f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:327169711409:android:d26b448d944b3c55d1e410",
+        "android_client_info": {
+          "package_name": "com.example.p1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB53_2J8-DlLklHJmC6VYAW_oHG2aX3s3s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
