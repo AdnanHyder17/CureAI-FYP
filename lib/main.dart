@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:p1/theme.dart';
 import 'package:p1/screens/splash_screen.dart';
 import 'package:p1/firebase_options.dart';
 
@@ -27,13 +26,11 @@ class CureAIApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'CureAI',
-      debugShowCheckedModeBanner: false, // Remove debug banner
-      theme: appTheme,
+      debugShowCheckedModeBanner: false,
       home: SplashScreen(),
-      // Global error handling for the app
       builder: (context, child) {
         return MediaQuery(
-          data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(1.0)), // Prevent text scaling issues
+          data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(1.0)),
           child: child!,
         );
       },

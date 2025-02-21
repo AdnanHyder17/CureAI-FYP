@@ -978,6 +978,7 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
         'rating': 0.0,
         'totalReviews': 0,
         'status': 'active',
+        'patientsTreated': 0,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
