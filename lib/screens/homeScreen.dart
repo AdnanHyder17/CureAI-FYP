@@ -12,6 +12,142 @@ import 'profile_screen.dart';
 import 'doctor_list_screen.dart';
 import 'package:p1/theme.dart';
 
+
+class _CarouselWidget extends StatefulWidget {
+  const _CarouselWidget();
+
+  @override
+  _CarouselWidgetState createState() => _CarouselWidgetState();
+}
+
+class _CarouselWidgetState extends State<_CarouselWidget> {
+  final PageController _pageController = PageController();
+  final List<Map<String, dynamic>> _carouselItems = [
+    {
+      'image': 'assets/image1.jpg',
+      'title': 'Regular Check-ups',
+      'description': 'Stay healthy with routine medical check-ups',
+    },
+    {
+      'image': 'assets/image2.jpg',
+      'title': 'Specialist Consultations',
+      'description': 'Connect with top specialists in their field',
+    },
+    {
+      'image': 'assets/image3.jpg',
+      'title': 'Mental Wellness',
+      'description': 'Take care of your mental health with our experts',
+    },
+  ];
+  int _currentCarouselPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupCarouselAutoScroll();
+  }
+
+  void _setupCarouselAutoScroll() {
+    Future.delayed(const Duration(seconds: 5), () {
+      if (_pageController.hasClients && mounted) {
+        final nextPage = (_currentCarouselPage + 1) % _carouselItems.length;
+        _pageController.animateToPage(
+          nextPage,
+          duration: const Duration(milliseconds: 800),
+          curve: Curves.easeInOut,
+        );
+      }
+      if (mounted) {
+        _setupCarouselAutoScroll();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 220,
+      child: Stack(
+        children: [
+          PageView.builder(
+            controller: _pageController,
+            onPageChanged: (index) => setState(() => _currentCarouselPage = index),
+            itemCount: _carouselItems.length,
+            itemBuilder: (context, index) {
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  ShaderMask(
+                    shaderCallback: (rect) => LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
+                      stops: const [0.6, 1.0],
+                    ).createShader(rect),
+                    blendMode: BlendMode.darken,
+                    child: Image.asset(
+                      _carouselItems[index]['image'],
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 30,
+                    left: 20,
+                    right: 20,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _carouselItems[index]['title'],
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            shadows: [Shadow(blurRadius: 3.0, color: Colors.black45)],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _carouselItems[index]['description'],
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            shadows: [Shadow(blurRadius: 3.0, color: Colors.black45)],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          Positioned(
+            bottom: 10,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: SmoothPageIndicator(
+                controller: _pageController,
+                count: _carouselItems.length,
+                effect: ExpandingDotsEffect(
+                  dotHeight: 8,
+                  dotWidth: 8,
+                  expansionFactor: 3,
+                  spacing: 5,
+                  activeDotColor: AppColors.secondary,
+                  dotColor: AppColors.white.withOpacity(0.7),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -271,7 +407,8 @@ class _HomeScreenState extends State<HomeScreen>
         }
       },
       child: Scaffold(
-        appBar: AppBar(
+        appBar:
+        AppBar(
           title: Text(
             nickname != null ? 'Welcome, $nickname!' : 'Welcome!',
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
@@ -279,31 +416,37 @@ class _HomeScreenState extends State<HomeScreen>
           actions: [
             Padding(
               padding: const EdgeInsets.only(right: 16.0),
-              child: GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _showProfileMenu = !_showProfileMenu;
-                  });
+              child: PopupMenuButton<String>(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                onSelected: (value) {
+                  if (value == 'logout') _confirmLogout();
                 },
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    // Profile Avatar
-                    CircleAvatar(
-                      backgroundColor: AppColors.secondary,
-                      radius: 20,
-                      child: Text(
-                        nickname?.isNotEmpty == true
-                            ? nickname![0].toUpperCase()
-                            : '?',
-                        style: TextStyle(
-                          color: AppColors.dark,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
+                itemBuilder: (BuildContext context) => [
+                  PopupMenuItem<String>(
+                    value: 'logout',
+                    child: Row(
+                      children: [
+                        Icon(Icons.logout, color: AppColors.error, size: 20),
+                        const SizedBox(width: 12),
+                        Text('Logout', style: TextStyle(color: AppColors.error)),
+                      ],
                     ),
-                  ],
+                  ),
+                ],
+                child: CircleAvatar(
+                  backgroundColor: AppColors.secondary,
+                  radius: 20,
+                  child: Text(
+                    nickname?.isNotEmpty == true
+                        ? nickname![0].toUpperCase()
+                        : '?',
+                    style: TextStyle(
+                      color: AppColors.dark,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -340,175 +483,12 @@ class _HomeScreenState extends State<HomeScreen>
                                 ),
                             children: [
                               // Enhanced Carousel with Overlay Text
-                              SizedBox(
-                                height: 220,
-                                child: Stack(
-                                  children: [
-                                    PageView.builder(
-                                      controller: _pageController,
-                                      onPageChanged: (index) {
-                                        setState(() {
-                                          _currentCarouselPage = index;
-                                        });
-                                      },
-                                      itemCount: _carouselItems.length,
-                                      itemBuilder: (context, index) {
-                                        return Stack(
-                                          fit: StackFit.expand,
-                                          children: [
-                                            // Image with gradient overlay
-                                            ShaderMask(
-                                              shaderCallback: (rect) {
-                                                return LinearGradient(
-                                                  begin: Alignment.topCenter,
-                                                  end: Alignment.bottomCenter,
-                                                  colors: [
-                                                    Colors.transparent,
-                                                    Colors.black.withOpacity(0.7),
-                                                  ],
-                                                  stops: const [0.6, 1.0],
-                                                ).createShader(rect);
-                                              },
-                                              blendMode: BlendMode.darken,
-                                              child: Image.asset(
-                                                _carouselItems[index]['image'],
-                                                fit: BoxFit.cover,
-                                              ),
-                                            ),
-                                            // Text overlay
-                                            Positioned(
-                                              bottom: 30,
-                                              left: 20,
-                                              right: 20,
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    _carouselItems[index]['title'],
-                                                    style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontSize: 24,
-                                                      fontWeight: FontWeight.bold,
-                                                      shadows: [
-                                                        Shadow(
-                                                          blurRadius: 3.0,
-                                                          color: Colors.black45,
-                                                          offset: Offset(
-                                                            1.0,
-                                                            1.0,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 8),
-                                                  Text(
-                                                    _carouselItems[index]['description'],
-                                                    style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontSize: 16,
-                                                      shadows: [
-                                                        Shadow(
-                                                          blurRadius: 3.0,
-                                                          color: Colors.black45,
-                                                          offset: Offset(
-                                                            1.0,
-                                                            1.0,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        );
-                                      },
-                                    ),
-                                    // Enhanced page indicator
-                                    Positioned(
-                                      bottom: 10,
-                                      left: 0,
-                                      right: 0,
-                                      child: Center(
-                                        child: SmoothPageIndicator(
-                                          controller: _pageController,
-                                          count: _carouselItems.length,
-                                          effect: ExpandingDotsEffect(
-                                            dotHeight: 8,
-                                            dotWidth: 8,
-                                            expansionFactor: 3,
-                                            spacing: 5,
-                                            activeDotColor: AppColors.secondary,
-                                            dotColor: AppColors.white.withOpacity(
-                                              0.7,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-
-                              if (_showProfileMenu)
-                                Positioned(
-                                  top: AppBar().preferredSize.height,
-                                  right: 16,
-                                  child: Material(
-                                    elevation: 8,
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Container(
-                                      width: 150,
-                                      decoration: BoxDecoration(
-                                        color: AppColors.white,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: InkWell(
-                                        borderRadius: BorderRadius.circular(8),
-                                        onTap: () {
-                                          setState(() {
-                                            _showProfileMenu = false;
-                                          });
-                                          _confirmLogout();
-                                        },
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 12,
-                                            horizontal: 16,
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              Icon(
-                                                Icons.logout,
-                                                color: AppColors.error,
-                                                size: 20,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Text(
-                                                'Logout',
-                                                style: TextStyle(
-                                                  color: AppColors.error,
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-
+                              const _CarouselWidget(),
                               const SizedBox(height: 20),
 
                               // Upcoming Appointments Container
                               Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16.0,
-                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 16.0),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
