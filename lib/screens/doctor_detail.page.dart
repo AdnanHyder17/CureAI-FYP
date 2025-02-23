@@ -216,7 +216,7 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
                 child: Column(
                   children: [
                     Text(
-                      '\$${widget.doctorData['consultationFee']/1000}k',
+                      '${widget.doctorData['consultationFee']}',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 18,

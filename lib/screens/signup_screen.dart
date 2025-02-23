@@ -105,7 +105,7 @@ class _SignupScreenState extends State<SignupScreen> {
               shrinkWrap: true,
               children: [
                 Image.asset(
-                  'assets/signup_image.png',
+                  'assets/signup.jpg',
                   height: 150,
                 ),
                 SizedBox(height: 30),

@@ -280,10 +280,12 @@ class _HomeScreenState extends State<HomeScreen>
               Map<String, dynamic> doctorData = doctorDoc.data() as Map<String, dynamic>;
               updateData['specialty'] = doctorData['specialty'];
             }
-
+            print("*****************************Checking for Doctor and User********************");
             if (userDoc.exists) {
+              print("*****************************YES User doctor exits********************");
               Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
               updateData['doctorName'] = userData['nickname'];
+              print("*****************************${userData['nickname']}********************");
             }
 
             if (updateData.isNotEmpty) {

@@ -71,19 +71,19 @@ class _LoginScreenState extends State<LoginScreen> {
               // App Logo
               Image.asset(
                 'assets/logo.png',
-                height: 120,
+                height: 250,
               ),
               const SizedBox(height: 20),
               // Welcome Text
-              Text(
-                'Welcome Back!',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primary,
-                ),
-              ),
-              const SizedBox(height: 20),
+              // Text(
+              //   'Welcome Back!',
+              //   textAlign: TextAlign.center,
+              //   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+              //     fontWeight: FontWeight.bold,
+              //     color: AppColors.primary,
+              //   ),
+              // ),
+              // const SizedBox(height: 20),
               // Login Form
               Form(
                 key: _formKey,
