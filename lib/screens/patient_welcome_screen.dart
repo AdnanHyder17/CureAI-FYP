@@ -31,7 +31,7 @@ class PatientWelcomeScreen extends StatelessWidget {
             // Robot Illustration
             Flexible(
               child: Image.asset(
-                'assets/robot.png', // Ensure this asset exists
+                'assets/patient_welcome.png', // Ensure this asset exists
                 fit: BoxFit.contain,
               ),
             ),

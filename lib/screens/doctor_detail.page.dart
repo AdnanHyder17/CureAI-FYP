@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import 'package:p1/theme.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 
@@ -126,40 +127,9 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
                   end: Alignment.bottomCenter,
                   colors: [
                     Colors.transparent,
-                    Colors.black.withOpacity(0.7),
+                    Colors.black.withOpacity(0.6),
                   ],
                   stops: [0.6, 1.0],
-                ),
-              ),
-            ),
-            Positioned(
-              top: 16,
-              right: 16,
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.surface.withOpacity(0.8),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: isOnline ? AppColors.success : AppColors.gray,
-                      ),
-                    ),
-                    SizedBox(width: 6),
-                    Text(
-                      isOnline ? 'Online' : 'Offline',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: isOnline ? AppColors.success : AppColors.gray,
-                      ),
-                    ),
-                  ],
                 ),
               ),
             ),
@@ -172,7 +142,6 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
   // Doctor info section
   Widget _buildDoctorInfo() {
     final double rating = (widget.doctorData['rating'] ?? 0).toDouble();
-    final int reviews = widget.doctorData['totalReviews'] ?? 0;
     final String specialty = widget.doctorData['specialty'] ?? 'Specialist';
 
     return Padding(
@@ -240,12 +209,6 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _buildInfoItem(
-                icon: Icons.star,
-                iconColor: AppColors.warning,
-                value: '$rating',
-                label: '$reviews Reviews',
-              ),
-              _buildInfoItem(
                 icon: Icons.work_history,
                 iconColor: AppColors.secondary,
                 value: '${widget.doctorData['yearsOfExperience'] ?? 0}+',
@@ -254,7 +217,7 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
               _buildInfoItem(
                 icon: Icons.people,
                 iconColor: AppColors.primary,
-                value: '${(reviews * 2.5).floor()}+',
+                value: '',
                 label: 'Patients',
               ),
             ],
@@ -300,55 +263,77 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
     );
   }
 
-  // Action buttons for message, video call and share
+  // Action buttons for message and video call
   Widget _buildActionButtons() {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: Row(
         children: [
           Expanded(
-            child: _buildActionButton(
-              icon: Icons.message,
-              label: 'Message',
-              color: AppColors.primary,
-              onTap: () {
-                // Implement message functionality
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Message feature coming soon')),
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('appointments')
+                  .where('patientId', isEqualTo: currentUserId)
+                  .where('doctorId', isEqualTo: widget.doctorId)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                final hasAppointments = snapshot.hasData && snapshot.data!.docs.isNotEmpty;
+
+                return _buildActionButton(
+                  icon: Icons.message,
+                  label: 'Message',
+                  color: hasAppointments ? AppColors.primary : Colors.grey,
+                  onTap: hasAppointments ? () => _handleMessage() : null, // Pass null if no appointments
                 );
               },
             ),
           ),
           SizedBox(width: 12),
           Expanded(
-            child: _buildActionButton(
-              icon: Icons.videocam,
-              label: 'Video Call',
-              color: AppColors.secondary,
-              onTap: () {
-                // Implement video call functionality
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Video call feature coming soon')),
-                );
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('appointments')
+                  .where('patientId', isEqualTo: currentUserId)
+                  .where('doctorId', isEqualTo: widget.doctorId)
+                  .where('date', isLessThanOrEqualTo: Timestamp.now())
+                  .where('videoCallUsed', isEqualTo: false)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                final canVideoCall = snapshot.hasData && snapshot.data!.docs.isNotEmpty;
 
+                return _buildActionButton(
+                  icon: Icons.videocam,
+                  label: 'Video Call',
+                  color: canVideoCall ? AppColors.secondary : Colors.grey,
+                  onTap: canVideoCall ? () => _handleVideoCall(snapshot.data!.docs.first.id) : null, // Pass null if no video call
+                );
               },
             ),
           ),
-          SizedBox(width: 12),
-          _buildActionButton(
-            icon: Icons.share,
-            label: 'Share',
-            color: AppColors.gray,
-            isWide: false,
-            onTap: () {
-              // Implement share functionality
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Share feature coming soon')),
-              );
-            },
-          ),
         ],
       ),
+    );
+  }
+
+  void _handleMessage() {
+    // Implement message functionality
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Opening chat...')),
+    );
+  }
+
+  void _handleVideoCall(String appointmentId) async {
+    // Update video call usage
+    await FirebaseFirestore.instance
+        .collection('appointments')
+        .doc(appointmentId)
+        .update({'videoCallUsed': true});
+
+    // Implement video call functionality
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Starting video call...')),
     );
   }
 
@@ -358,10 +343,10 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
     required String label,
     required Color color,
     bool isWide = true,
-    required VoidCallback onTap,
+    VoidCallback? onTap, // Make onTap nullable
   }) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: onTap, // Pass the nullable onTap directly
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 12, horizontal: isWide ? 12 : 16),
         decoration: BoxDecoration(
@@ -388,7 +373,7 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
     );
   }
 
-  // Tab buttons for About, Experience, Reviews
+  // Tab buttons for About, Experience
   Widget _buildTabButtons() {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 20),
@@ -396,7 +381,6 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
         children: [
           _buildTabButton('About'),
           _buildTabButton('Experience'),
-          _buildTabButton('Reviews'),
         ],
       ),
     );
@@ -444,8 +428,6 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
         return _buildAboutContent();
       case 'Experience':
         return _buildExperienceContent();
-      case 'Reviews':
-        return _buildReviewsContent();
       default:
         return _buildAboutContent();
     }
@@ -725,271 +707,6 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
     );
   }
 
-  // Reviews tab content
-  Widget _buildReviewsContent() {
-    return Padding(
-      padding: EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildReviewSummary(),
-          SizedBox(height: 24),
-          Text(
-            'Patient Reviews',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          SizedBox(height: 16),
-          widget.doctorData['totalReviews'] == 0 || widget.doctorData['totalReviews'] == null
-              ? _buildNoReviewsMessage()
-              : _buildMockReviews(),
-        ],
-      ),
-    );
-  }
-
-  // Review summary with rating bars
-  Widget _buildReviewSummary() {
-    final double rating = (widget.doctorData['rating'] ?? 0).toDouble();
-    final int reviews = widget.doctorData['totalReviews'] ?? 0;
-
-    // Mock distribution for rating bars
-    final List<double> distribution = [0.7, 0.15, 0.1, 0.03, 0.02];
-
-    return Container(
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.light,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Column(
-            children: [
-              Text(
-                rating.toStringAsFixed(1),
-                style: TextStyle(
-                  fontSize: 36,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.dark,
-                ),
-              ),
-              SizedBox(height: 4),
-              RatingBar.builder(
-                initialRating: rating,
-                minRating: 0,
-                direction: Axis.horizontal,
-                allowHalfRating: true,
-                itemCount: 5,
-                itemSize: 18,
-                ignoreGestures: true,
-                itemBuilder: (context, _) => Icon(
-                  Icons.star,
-                  color: AppColors.warning,
-                ),
-                onRatingUpdate: (_) {},
-              ),
-              SizedBox(height: 4),
-              Text(
-                'Based on $reviews reviews',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.gray,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(width: 24),
-          Expanded(
-            child: Column(
-              children: List.generate(5, (index) {
-                final int star = 5 - index;
-                final double percentage = reviews > 0 ? distribution[index] : 0;
-
-                return Padding(
-                  padding: EdgeInsets.only(bottom: index == 4 ? 0 : 4),
-                  child: Row(
-                    children: [
-                      Text(
-                        '$star',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      SizedBox(width: 4),
-                      Icon(
-                        Icons.star,
-                        size: 12,
-                        color: AppColors.warning,
-                      ),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            value: percentage,
-                            backgroundColor: AppColors.gray.withOpacity(0.2),
-                            color: AppColors.primary,
-                            minHeight: 8,
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 8),
-                      Text(
-                        '${(percentage * 100).toInt()}%',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.gray,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Message when there are no reviews
-  Widget _buildNoReviewsMessage() {
-    return Center(
-      child: Column(
-        children: [
-          SizedBox(height: 24),
-          Icon(
-            Icons.rate_review_outlined,
-            size: 64,
-            color: AppColors.gray.withOpacity(0.5),
-          ),
-          SizedBox(height: 16),
-          Text(
-            'No Reviews Yet',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: AppColors.dark,
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Be the first to leave a review after your appointment',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: AppColors.gray,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Mock reviews for demonstration
-  Widget _buildMockReviews() {
-    // Creating mock reviews for demonstration
-    List<Map<String, dynamic>> mockReviews = [
-      {
-        'name': 'Sarah Johnson',
-        'date': '2 weeks ago',
-        'rating': 5.0,
-        'content': 'Excellent doctor! Very attentive and explained everything clearly. Would highly recommend.',
-      },
-      {
-        'name': 'Michael Brown',
-        'date': '1 month ago',
-        'rating': 4.5,
-        'content': 'Great experience. The doctor was knowledgeable and took time to address all my concerns.',
-      },
-    ];
-
-    return Column(
-      children: mockReviews.map((review) {
-        return Container(
-          margin: EdgeInsets.only(bottom: 16),
-          padding: EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 8,
-                offset: Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: AppColors.light,
-                    child: Text(
-                      review['name'].toString().substring(0, 1),
-                      style: TextStyle(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          review['name'],
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          review['date'],
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.gray,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  RatingBar.builder(
-                    initialRating: review['rating'],
-                    minRating: 0,
-                    direction: Axis.horizontal,
-                    allowHalfRating: true,
-                    itemCount: 5,
-                    itemSize: 14,
-                    ignoreGestures: true,
-                    itemBuilder: (context, _) => Icon(
-                      Icons.star,
-                      color: AppColors.warning,
-                    ),
-                    onRatingUpdate: (_) {},
-                  ),
-                ],
-              ),
-              SizedBox(height: 12),
-              Text(
-                review['content'],
-                style: TextStyle(
-                  color: AppColors.dark.withOpacity(0.8),
-                  height: 1.5,
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-
   // Placeholder for profile image
   Widget _buildProfilePlaceholder() {
     return Container(
@@ -1018,6 +735,10 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
 
   // Book appointment button
   Widget _buildBookAppointmentButton() {
+
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final isDoctorViewingOwnProfile = currentUser?.uid == widget.doctorId;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1033,7 +754,9 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
       ),
       child: SafeArea(
         child: ElevatedButton(
-          onPressed: () => _showAppointmentBookingDialog(),
+          onPressed: isDoctorViewingOwnProfile
+              ? null
+              : () => _showAppointmentBookingDialog(),
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primary,
             foregroundColor: AppColors.white,
@@ -1041,9 +764,15 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
+          ).copyWith(
+            backgroundColor: MaterialStateProperty.all(
+              isDoctorViewingOwnProfile ? Colors.grey : AppColors.primary,
+            ),
           ),
-          child: const Text(
-            'Book Appointment',
+          child: Text(
+            isDoctorViewingOwnProfile
+                ? 'Cannot Book Own Appointment'
+                : 'Book Appointment',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
@@ -1329,7 +1058,7 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
               style: const TextStyle(fontSize: 16),
             ),
             const SizedBox(height: 8),
-            Text('Fee: \$${widget.doctorData['consultationFee'] ?? 0}',
+            Text('Fee: ${widget.doctorData['consultationFee'] ?? 0}',
               style: const TextStyle(fontSize: 16),
             ),
           ],
@@ -1401,6 +1130,8 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
         'status': 'scheduled',
         'consultationFee': widget.doctorData['consultationFee'] ?? 0,
         'createdAt': Timestamp.now(),
+        'videoCallUsed': false,
+        'doctorsNote': '',
       };
 
       // Save to Firestore

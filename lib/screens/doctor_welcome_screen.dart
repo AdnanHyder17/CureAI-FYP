@@ -28,12 +28,10 @@ class DoctorWelcomeScreen extends StatelessWidget {
         child: Column(
           children: [
             // Doctor Illustration
-            Expanded(
-              child: Image.asset(
-                'assets/doctor_welcome.png', // Ensure this asset exists
-                fit: BoxFit.contain,
+            Image.asset(
+                'assets/doctor_welcome.jpg', // Ensure this asset exists
+                fit: BoxFit.cover,
               ),
-            ),
             const SizedBox(height: 20),
 
             // Welcome Message

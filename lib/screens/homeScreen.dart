@@ -280,14 +280,11 @@ class _HomeScreenState extends State<HomeScreen>
               Map<String, dynamic> doctorData = doctorDoc.data() as Map<String, dynamic>;
               updateData['specialty'] = doctorData['specialty'];
             }
-            print("*****************************Checking for Doctor and User********************");
             if (userDoc.exists) {
-              print("*****************************YES User doctor exits********************");
               Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
               updateData['doctorName'] = userData['nickname'];
-              print("*****************************${userData['nickname']}********************");
             }
-
+print("*********************************${updateData['specialty']}*********************${updateData['doctorName']}**********************************");
             if (updateData.isNotEmpty) {
               await _firestore.collection('appointments').doc(doc.id).update(updateData);
             }
@@ -490,414 +487,327 @@ class _HomeScreenState extends State<HomeScreen>
 
                               // Upcoming Appointments Container
                               Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.calendar_today,
-                                          color: AppColors.primary,
+                              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.calendar_today,
+                                        color: AppColors.primary,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Upcoming Appointments',
+                                        style: TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.dark,
                                         ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Upcoming Appointments',
-                                          style: TextStyle(
-                                            fontSize: 20,
-                                            fontWeight: FontWeight.bold,
-                                            color: AppColors.dark,
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+
+                                  // Upcoming appointments
+                                  StreamBuilder<QuerySnapshot>(
+                                    stream: _firestore
+                                        .collection('appointments')
+                                        .where(
+                                      'patientId',
+                                      isEqualTo: _auth.currentUser?.uid,
+                                    )
+                                        .where(
+                                      'date',
+                                      isGreaterThanOrEqualTo: Timestamp.now(),
+                                    )
+                                        .orderBy('date')
+                                        .limit(5)
+                                        .snapshots(),
+                                    builder: (context, snapshot) {
+                                      if (snapshot.connectionState == ConnectionState.waiting) {
+                                        return const Center(
+                                          child: SizedBox(
+                                            height: 100,
+                                            child: Center(
+                                              child: CircularProgressIndicator(
+                                                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                                              ),
+                                            ),
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 12),
+                                        );
+                                      }
 
-                                    // Upcoming appointments
-                                    StreamBuilder<QuerySnapshot>(
-                                      stream:
-                                          _firestore
-                                              .collection('appointments')
-                                              .where(
-                                                'patientId',
-                                                isEqualTo: _auth.currentUser?.uid,
-                                              )
-                                              .where(
-                                                'date',
-                                                isGreaterThanOrEqualTo:
-                                                    Timestamp.now(),
-                                          )
-                                              .orderBy('date')
-                                              .limit(5)
-                                              .snapshots(),
-                                      builder: (context, snapshot) {
-                                        if (snapshot.connectionState ==
-                                            ConnectionState.waiting) {
-                                          return const Center(
-                                            child: SizedBox(
-                                              height: 100,
-                                              child: Center(
-                                                child: CircularProgressIndicator(
-                                                  valueColor:
-                                                      AlwaysStoppedAnimation<
-                                                        Color
-                                                      >(AppColors.primary),
+                                      if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                                        return Container(
+                                          padding: const EdgeInsets.all(20),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.light,
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Column(
+                                            children: [
+                                              Icon(
+                                                Icons.event_busy,
+                                                color: AppColors.gray,
+                                                size: 48,
+                                              ),
+                                              const SizedBox(height: 16),
+                                              Text(
+                                                'No upcoming appointments',
+                                                style: TextStyle(
+                                                  color: AppColors.dark,
+                                                  fontSize: 16,
                                                 ),
                                               ),
-                                            ),
-                                          );
-                                        }
-
-                                        if (!snapshot.hasData ||
-                                            snapshot.data!.docs.isEmpty) {
-                                          return Container(
-                                            padding: const EdgeInsets.all(20),
-                                            decoration: BoxDecoration(
-                                              color: AppColors.light,
-                                              borderRadius: BorderRadius.circular(
-                                                12,
+                                              const SizedBox(height: 16),
+                                              ElevatedButton.icon(
+                                                onPressed: () {
+                                                  Navigator.push(
+                                                    context,
+                                                    MaterialPageRoute(
+                                                      builder: (context) => DoctorListingScreen(),
+                                                    ),
+                                                  );
+                                                },
+                                                icon: Icon(Icons.add),
+                                                label: Text('Book an Appointment'),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: AppColors.primary,
+                                                  foregroundColor: AppColors.white,
+                                                  padding: EdgeInsets.symmetric(
+                                                    horizontal: 16,
+                                                    vertical: 12,
+                                                  ),
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius: BorderRadius.circular(8),
+                                                  ),
+                                                ),
                                               ),
-                                            ),
-                                            child: Column(
-                                              children: [
-                                                Icon(
-                                                  Icons.event_busy,
-                                                  color: AppColors.gray,
-                                                  size: 48,
-                                                ),
-                                                const SizedBox(height: 16),
-                                                Text(
-                                                  'No upcoming appointments',
-                                                  style: TextStyle(
-                                                    color: AppColors.dark,
-                                                    fontSize: 16,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 16),
-                                                ElevatedButton.icon(
-                                                  onPressed: () {
-                                                    Navigator.push(
-                                                      context,
-                                                      MaterialPageRoute(
-                                                        builder:
-                                                            (context) =>
-                                                                DoctorListingScreen(),
-                                                      ),
-                                                    );
-                                                  },
-                                                  icon: Icon(Icons.add),
-                                                  label: Text(
-                                                    'Book an Appointment',
-                                                  ),
-                                                  style: ElevatedButton.styleFrom(
-                                                    backgroundColor:
-                                                        AppColors.primary,
-                                                    foregroundColor:
-                                                        AppColors.white,
-                                                    padding: EdgeInsets.symmetric(
-                                                      horizontal: 16,
-                                                      vertical: 12,
-                                                    ),
-                                                    shape: RoundedRectangleBorder(
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            8,
-                                                          ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          );
-                                        }
+                                            ],
+                                          ),
+                                        );
+                                      }
 
-                                        return Column(
-                                          children:
-                                              snapshot.data!.docs.map((doc) {
-                                                Map<String, dynamic> data =
-                                                    doc.data()
-                                                        as Map<String, dynamic>;
-                                                DateTime appointmentDate =
-                                                    (data['date'] as Timestamp)
-                                                        .toDate();
-                                                String formattedDate = DateFormat(
-                                                  'EEE, MMM d, yyyy',
-                                                ).format(appointmentDate);
-                                                String formattedTime =
-                                                    data['timeSlot'] != null
-                                                        ? _formatTimeSlot(
-                                                          data['timeSlot'],
-                                                        )
-                                                        : 'Time not specified';
+                                      return Column(
+                                        children: snapshot.data!.docs.map((doc) {
+                                          Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+                                          DateTime appointmentDate = (data['date'] as Timestamp).toDate();
+                                          String formattedDate = DateFormat('EEE, MMM d, yyyy').format(appointmentDate);
+                                          String formattedTime = data['timeSlot'] != null
+                                              ? _formatTimeSlot(data['timeSlot'])
+                                              : 'Time not specified';
 
-                                                return Slidable(
-                                                  key: Key(doc.id),
-                                                  endActionPane: ActionPane(
-                                                    motion: const ScrollMotion(),
-                                                    children: [
-                                                      SlidableAction(
-                                                        onPressed:
-                                                            (_) =>
-                                                                _rescheduleAppointment(
-                                                                  doc.id,
-                                                                ),
-                                                        backgroundColor:
-                                                            AppColors.warning,
-                                                        foregroundColor:
-                                                            Colors.white,
-                                                        icon: Icons.edit_calendar,
-                                                        label: 'Reschedule',
-                                                        borderRadius:
-                                                            BorderRadius.horizontal(
-                                                              left:
-                                                                  Radius.circular(
-                                                                    12,
-                                                                  ),
-                                                            ),
-                                                      ),
-                                                      SlidableAction(
-                                                        onPressed:
-                                                            (_) =>
-                                                                _deleteAppointment(
-                                                                  doc.id,
-                                                                ),
-                                                        backgroundColor:
-                                                            AppColors.error,
-                                                        foregroundColor:
-                                                            Colors.white,
-                                                        icon: Icons.cancel,
-                                                        label: 'Cancel',
-                                                        borderRadius:
-                                                            BorderRadius.horizontal(
-                                                              right:
-                                                                  Radius.circular(
-                                                                    12,
-                                                                  ),
-                                                            ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  child: Container(
-                                                    margin: const EdgeInsets.only(
-                                                      bottom: 12,
-                                                    ),
-                                                    decoration: BoxDecoration(
-                                                      color: AppColors.white,
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            12,
+                                          return FutureBuilder<DocumentSnapshot>(
+                                            future: _firestore.collection('doctors').doc(data['doctorId']).get(),
+                                            builder: (context, doctorSnapshot) {
+                                              if (doctorSnapshot.connectionState == ConnectionState.waiting) {
+                                                return CircularProgressIndicator();
+                                              }
+
+                                              if (!doctorSnapshot.hasData || !doctorSnapshot.data!.exists) {
+                                                return Text('Doctor details not found');
+                                              }
+
+                                              Map<String, dynamic> doctorData = doctorSnapshot.data!.data() as Map<String, dynamic>;
+
+                                              return FutureBuilder<DocumentSnapshot>(
+                                                future: _firestore.collection('users').doc(data['doctorId']).get(),
+                                                builder: (context, userSnapshot) {
+                                                  if (userSnapshot.connectionState == ConnectionState.waiting) {
+                                                    return CircularProgressIndicator();
+                                                  }
+
+                                                  if (!userSnapshot.hasData || !userSnapshot.data!.exists) {
+                                                    return Text('User details not found');
+                                                  }
+
+                                                  Map<String, dynamic> userData = userSnapshot.data!.data() as Map<String, dynamic>;
+
+                                                  String doctorName = userData['nickname'] ?? 'Unknown';
+                                                  String specialty = doctorData['specialty'] ?? 'Medical Appointment';
+
+                                                  return Slidable(
+                                                    key: Key(doc.id),
+                                                    endActionPane: ActionPane(
+                                                      motion: const ScrollMotion(),
+                                                      children: [
+                                                        SlidableAction(
+                                                          onPressed: (_) => _rescheduleAppointment(doc.id),
+                                                          backgroundColor: AppColors.warning,
+                                                          foregroundColor: Colors.white,
+                                                          icon: Icons.edit_calendar,
+                                                          label: 'Reschedule',
+                                                          padding: EdgeInsets.symmetric(horizontal: 5), // Adjust spacing
+                                                          flex: 1,
+                                                          borderRadius: BorderRadius.horizontal(
+                                                            left: Radius.circular(12), // Rounded left side
+                                                            right: Radius.circular(6), // Slightly curved between buttons
                                                           ),
-                                                      boxShadow: [
-                                                        BoxShadow(
-                                                          color: Colors.black
-                                                              .withOpacity(0.05),
-                                                          blurRadius: 10,
-                                                          offset: const Offset(
-                                                            0,
-                                                            4,
+                                                        ),
+                                                        SlidableAction(
+                                                          onPressed: (_) => _deleteAppointment(doc.id),
+                                                          backgroundColor: AppColors.error,
+                                                          foregroundColor: Colors.white,
+                                                          icon: Icons.cancel,
+                                                          label: 'Cancel',
+                                                          padding: EdgeInsets.symmetric(horizontal: 5),
+                                                          flex: 1,
+                                                          borderRadius: BorderRadius.horizontal(
+                                                            left: Radius.circular(6), // Slightly curved between buttons
+                                                            right: Radius.circular(12), // Rounded right side
                                                           ),
                                                         ),
                                                       ],
                                                     ),
-                                                    child: Padding(
-                                                      padding:
-                                                          const EdgeInsets.all(
-                                                            16,
-                                                          ),
-                                                      child: Column(
-                                                        crossAxisAlignment:
-                                                            CrossAxisAlignment
-                                                                .start,
-                                                        children: [
-                                                          Row(
-                                                            children: [
-                                                              Container(
-                                                                width: 50,
-                                                                height: 50,
-                                                                decoration: BoxDecoration(
-                                                                  color: AppColors
-                                                                      .primary
-                                                                      .withOpacity(
-                                                                        0.1,
-                                                                      ),
-                                                                  borderRadius:
-                                                                      BorderRadius.circular(
-                                                                        10,
-                                                                      ),
-                                                                ),
-                                                                child: Icon(
-                                                                  Icons
-                                                                      .medical_services,
-                                                                  color:
-                                                                      AppColors
-                                                                          .primary,
-                                                                ),
-                                                              ),
-                                                              const SizedBox(
-                                                                width: 12,
-                                                              ),
-                                                              Expanded(
-                                                                child: Column(
-                                                                  crossAxisAlignment:
-                                                                      CrossAxisAlignment
-                                                                          .start,
-                                                                  children: [
-                                                                    Text(
-                                                                      'Dr. ${data['doctorName'] ?? 'Unknown'}',
-                                                                      style: TextStyle(
-                                                                        fontSize:
-                                                                            16,
-                                                                        fontWeight:
-                                                                            FontWeight
-                                                                                .bold,
-                                                                        color:
-                                                                            AppColors
-                                                                                .dark,
-                                                                      ),
-                                                                    ),
-                                                                    const SizedBox(
-                                                                      height: 4,
-                                                                    ),
-                                                                    Text(
-                                                                      data['specialty'] ??
-                                                                          'Medical Appointment',
-                                                                      style: TextStyle(
-                                                                        fontSize:
-                                                                            14,
-                                                                        color:
-                                                                            AppColors
-                                                                                .gray,
-                                                                      ),
-                                                                    ),
-                                                                  ],
-                                                                ),
-                                                              ),
-                                                              Container(
-                                                                padding:
-                                                                    EdgeInsets.symmetric(
-                                                                      horizontal:
-                                                                          10,
-                                                                      vertical: 6,
-                                                                    ),
-                                                                decoration: BoxDecoration(
-                                                                  color: AppColors
-                                                                      .success
-                                                                      .withOpacity(
-                                                                        0.1,
-                                                                      ),
-                                                                  borderRadius:
-                                                                      BorderRadius.circular(
-                                                                        20,
-                                                                      ),
-                                                                ),
-                                                                child: Text(
-                                                                  'Confirmed',
-                                                                  style: TextStyle(
-                                                                    color:
-                                                                        AppColors
-                                                                            .success,
-                                                                    fontSize: 12,
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .w500,
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          ),
-                                                          const SizedBox(
-                                                            height: 16,
-                                                          ),
-                                                          const Divider(
-                                                            height: 1,
-                                                          ),
-                                                          const SizedBox(
-                                                            height: 16,
-                                                          ),
-                                                          Row(
-                                                            children: [
-                                                              Expanded(
-                                                                child: Row(
-                                                                  children: [
-                                                                    Icon(
-                                                                      Icons
-                                                                          .calendar_month,
-                                                                      color:
-                                                                          AppColors
-                                                                              .primary,
-                                                                      size: 16,
-                                                                    ),
-                                                                    const SizedBox(
-                                                                      width: 6,
-                                                                    ),
-                                                                    Text(
-                                                                      formattedDate,
-                                                                      style: TextStyle(
-                                                                        fontSize:
-                                                                            14,
-                                                                        color:
-                                                                            AppColors
-                                                                                .dark,
-                                                                      ),
-                                                                    ),
-                                                                  ],
-                                                                ),
-                                                              ),
-                                                              Expanded(
-                                                                child: Row(
-                                                                  children: [
-                                                                    Icon(
-                                                                      Icons
-                                                                          .access_time,
-                                                                      color:
-                                                                          AppColors
-                                                                              .primary,
-                                                                      size: 16,
-                                                                    ),
-                                                                    const SizedBox(
-                                                                      width: 6,
-                                                                    ),
-                                                                    Text(
-                                                                      formattedTime,
-                                                                      style: TextStyle(
-                                                                        fontSize:
-                                                                            14,
-                                                                        color:
-                                                                            AppColors
-                                                                                .dark,
-                                                                      ),
-                                                                    ),
-                                                                  ],
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          ),
-                                                          const SizedBox(
-                                                            height: 16,
-                                                          ),
-                                                          Text(
-                                                            'Swipe left for options →',
-                                                            style: TextStyle(
-                                                              fontSize: 12,
-                                                              color:
-                                                                  AppColors.gray,
-                                                              fontStyle:
-                                                                  FontStyle
-                                                                      .italic,
-                                                            ),
+
+                                                    child: Container(
+                                                      margin: const EdgeInsets.only(bottom: 12),
+                                                      decoration: BoxDecoration(
+                                                        color: AppColors.white,
+                                                        borderRadius: BorderRadius.circular(12),
+                                                        boxShadow: [
+                                                          BoxShadow(
+                                                            color: Colors.black.withOpacity(0.05),
+                                                            blurRadius: 10,
+                                                            offset: const Offset(0, 4),
                                                           ),
                                                         ],
                                                       ),
+                                                      child: Padding(
+                                                        padding: const EdgeInsets.all(16),
+                                                        child: Column(
+                                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                                          children: [
+                                                            Row(
+                                                              children: [
+                                                                Container(
+                                                                  width: 50,
+                                                                  height: 50,
+                                                                  decoration: BoxDecoration(
+                                                                    color: AppColors.primary.withOpacity(0.1),
+                                                                    borderRadius: BorderRadius.circular(10),
+                                                                  ),
+                                                                  child: Icon(
+                                                                    Icons.medical_services,
+                                                                    color: AppColors.primary,
+                                                                  ),
+                                                                ),
+                                                                const SizedBox(width: 12),
+                                                                Expanded(
+                                                                  child: Column(
+                                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                                    children: [
+                                                                      Text(
+                                                                        'Dr. $doctorName',
+                                                                        style: TextStyle(
+                                                                          fontSize: 16,
+                                                                          fontWeight: FontWeight.bold,
+                                                                          color: AppColors.dark,
+                                                                        ),
+                                                                      ),
+                                                                      const SizedBox(height: 4),
+                                                                      Text(
+                                                                        specialty,
+                                                                        style: TextStyle(
+                                                                          fontSize: 14,
+                                                                          color: AppColors.gray,
+                                                                        ),
+                                                                      ),
+                                                                    ],
+                                                                  ),
+                                                                ),
+                                                                Container(
+                                                                  padding: EdgeInsets.symmetric(
+                                                                    horizontal: 10,
+                                                                    vertical: 6,
+                                                                  ),
+                                                                  decoration: BoxDecoration(
+                                                                    color: AppColors.success.withOpacity(0.1),
+                                                                    borderRadius: BorderRadius.circular(20),
+                                                                  ),
+                                                                  child: Text(
+                                                                    'Confirmed',
+                                                                    style: TextStyle(
+                                                                      color: AppColors.success,
+                                                                      fontSize: 12,
+                                                                      fontWeight: FontWeight.w500,
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                            const SizedBox(height: 16),
+                                                            const Divider(height: 1),
+                                                            const SizedBox(height: 16),
+                                                            Row(
+                                                              children: [
+                                                                Expanded(
+                                                                  child: Row(
+                                                                    children: [
+                                                                      Icon(
+                                                                        Icons.calendar_month,
+                                                                        color: AppColors.primary,
+                                                                        size: 16,
+                                                                      ),
+                                                                      const SizedBox(width: 6),
+                                                                      Text(
+                                                                        formattedDate,
+                                                                        style: TextStyle(
+                                                                          fontSize: 14,
+                                                                          color: AppColors.dark,
+                                                                        ),
+                                                                      ),
+                                                                    ],
+                                                                  ),
+                                                                ),
+                                                                Expanded(
+                                                                  child: Row(
+                                                                    children: [
+                                                                      Icon(
+                                                                        Icons.access_time,
+                                                                        color: AppColors.primary,
+                                                                        size: 16,
+                                                                      ),
+                                                                      const SizedBox(width: 6),
+                                                                      Text(
+                                                                        formattedTime,
+                                                                        style: TextStyle(
+                                                                          fontSize: 14,
+                                                                          color: AppColors.dark,
+                                                                        ),
+                                                                      ),
+                                                                    ],
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                            const SizedBox(height: 16),
+                                                            Text(
+                                                              'Swipe left for options →',
+                                                              style: TextStyle(
+                                                                fontSize: 12,
+                                                                color: AppColors.gray,
+                                                                fontStyle: FontStyle.italic,
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
                                                     ),
-                                                  ),
-                                                );
-                                              }).toList(),
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ),
+                                                  );
+                                                },
+                                              );
+                                            },
+                                          );
+                                        }).toList(),
+                                      );
+                                    },
+                                  ),
+                                ],
                               ),
+                            ),
 
                               const SizedBox(height: 24),
 
@@ -929,18 +839,6 @@ class _HomeScreenState extends State<HomeScreen>
                                               ),
                                             ),
                                           ],
-                                        ),
-                                        TextButton(
-                                          onPressed: () {
-                                            // Navigate to full appointment history
-                                          },
-                                          child: Text(
-                                            'View All',
-                                            style: TextStyle(
-                                              color: AppColors.primary,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
                                         ),
                                       ],
                                     ),
@@ -1266,11 +1164,6 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           _detailRow(Icons.calendar_today, 'Date', formattedDate),
           _detailRow(Icons.access_time, 'Time', formattedTime),
-          _detailRow(
-            Icons.location_on,
-            'Location',
-            appointmentData['location'] ?? 'Main Clinic',
-          ),
           _detailRow(
             Icons.note,
             'Notes',
