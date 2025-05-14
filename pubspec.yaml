@@ -33,10 +33,8 @@ dependencies:
   firebase_core: ^3.11.0
   firebase_auth: ^5.4.2
   cloud_firestore: ^5.6.3
-  provider: ^6.0.5
   dropdown_search: ^5.0.0
   smooth_page_indicator: ^1.0.0+2
-
 
 
 
@@ -51,9 +49,27 @@ dependencies:
   flutter_slidable: ^4.0.0
   flutter_staggered_animations: ^1.1.1
 
+  # New dependencies for chat & calls
+  permission_handler: ^11.3.1 # For handling permissions
+  uuid: ^4.5.1 # For generating unique IDs
+  provider: ^6.1.2 # For state management (optional, but good for call state)
+  flutter_webrtc: ^0.14.0
+  table_calendar: ^3.2.0
+  timezone: ^0.10.1
+  flutter_local_notifications: ^19.1.0
+  flutter_launcher_icons: ^0.14.3
+  http: ^1.4.0
+
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/CureAI_Logo_PNG.png"
+  min_sdk_android: 21
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

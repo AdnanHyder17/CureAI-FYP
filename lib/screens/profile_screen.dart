@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
@@ -210,12 +209,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // Update user data in 'users' collection
       await _firestore.collection('users').doc(uid).update({
         'nickname': _nicknameController.text,
+        'nickname_lowercase': _nicknameController.text.toLowerCase(),
         'country': _countryController.text,
       });
 
       // Update role-specific data
       if (_userRole == 'Doctor') {
         final Map<String, dynamic> doctorData = {
+          'nickname': _nicknameController.text,
+          'nickname_lowercase': _nicknameController.text.toLowerCase(),
           'about': _aboutController.text,
           'specialty': _specialtyController.text,
           'qualifications': _qualificationsController.text,
@@ -229,7 +231,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
         if (profileImageUrl != null) {
           doctorData['profileImageUrl'] = profileImageUrl;
+        } else if (_profileData.containsKey('profileImageUrl')) { // Retain existing image if not changed
+          doctorData['profileImageUrl'] = _profileData['profileImageUrl'];
         }
+
 
         await _firestore.collection('doctors').doc(uid).update(doctorData);
       } else if (_userRole == 'Patient') {

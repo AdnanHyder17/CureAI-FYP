@@ -82,7 +82,7 @@ class _DoctorListingScreenState extends State<DoctorListingScreen> {
               });
             },
             decoration: InputDecoration(
-              hintText: 'Search by name or specialty',
+              hintText: 'Search by name',
               prefixIcon: Icon(Icons.search, color: AppColors.gray),
               filled: true,
               fillColor: AppColors.white,
@@ -273,6 +273,12 @@ class _DoctorListingScreenState extends State<DoctorListingScreen> {
 
   Stream<QuerySnapshot> _buildDoctorsQuery() {
     Query query = FirebaseFirestore.instance.collection('doctors');
+    String processedSearchQuery = _searchQuery.trim().toLowerCase();
+
+    if (processedSearchQuery.isNotEmpty) {
+      query = query.where('nickname_lowercase', isGreaterThanOrEqualTo: processedSearchQuery)
+          .where('nickname_lowercase', isLessThanOrEqualTo: '${processedSearchQuery}\uf8ff');
+    }
 
     // Apply base filters (category and online status)
     if (_selectedCategory != 'All') {
@@ -523,39 +529,16 @@ class DoctorCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Doctor name placeholder from users collection
-                  FutureBuilder<DocumentSnapshot>(
-                    future: FirebaseFirestore.instance.collection('users').doc(doctorId).get(),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return Text(
-                          '...',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.dark,
-                          ),
-                        );
-                      }
-
-                      String nickname = 'Dr.';
-                      if (snapshot.hasData && snapshot.data != null) {
-                        final userData = snapshot.data!.data() as Map<String, dynamic>?;
-                        if (userData != null && userData.containsKey('nickname')) {
-                          nickname = 'Dr. ${userData['nickname']}';
-                        }
-                      }
-
-                      return Text(
-                        nickname,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.dark,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      );
-                    },
+                  // Doctor name directly from doctorData (denormalized)
+                  Text(
+                    'Dr. ${doctorData['nickname'] ?? 'Unknown'}', // Use nickname from doctorData
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.dark,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
 
                   SizedBox(height: 4),
@@ -572,33 +555,6 @@ class DoctorCard extends StatelessWidget {
 
                   SizedBox(height: 6),
                   Row(
-                    children: [
-                      Icon(
-                        Icons.star,
-                        color: AppColors.warning,
-                        size: 16,
-                      ),
-                      SizedBox(width: 4),
-                      Text(
-                        '$rating',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                      SizedBox(width: 2),
-                      Text(
-                        '($reviews)',
-                        style: TextStyle(
-                          color: AppColors.gray,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  SizedBox(height: 6),
-                  Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Row(
@@ -608,18 +564,19 @@ class DoctorCard extends StatelessWidget {
                             color: AppColors.gray,
                             size: 14,
                           ),
-                          SizedBox(width: 4),
+                          SizedBox(width: 8),
                           Text(
-                            '$experience yr${experience != 1 ? "s" : ""}',
+                            '$experience year${experience != 1 ? "s" : ""}',
                             style: TextStyle(
                               fontSize: 12,
-                              color: AppColors.gray,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.dark,
                             ),
                           ),
                         ]
                       ),
                       Text(
-                        '${fee}',
+                        'Rs ${fee}',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           color: AppColors.primary,
@@ -645,4 +602,13 @@ class DoctorCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// Define this class in doctor_list_screen.dart or a shared models file
+class CategoryItem {
+  final String name;
+  final IconData icon;
+  final Color color;
+
+  CategoryItem(this.name, this.icon, this.color);
 }

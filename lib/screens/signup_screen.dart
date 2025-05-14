@@ -50,6 +50,7 @@ class _SignupScreenState extends State<SignupScreen> {
           'country': country,
           'role': selectedRole,
           'timestamp': FieldValue.serverTimestamp(),
+          'nickname_lowercase': nickname.toLowerCase(), // For searching
         });
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -57,14 +58,16 @@ class _SignupScreenState extends State<SignupScreen> {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (context) => PatientWelcomeScreen(nickname: nickname),
+                builder: (context) => PatientWelcomeScreen(nickname: nickname), // Or directly to HomeScreen if no welcome
               ),
             );
           } else if (selectedRole == 'Doctor') {
+            // Navigate to DoctorProfessionalDetails first, then to Dashboard from there
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (context) => DoctorWelcomeScreen(nickname: nickname),
+                builder: (context) => DoctorWelcomeScreen(nickname: nickname), // Which then leads to DoctorProfessionalDetails
+                // After DoctorProfessionalDetails, it navigates to DoctorDashboardScreen
               ),
             );
           }
