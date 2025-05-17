@@ -332,7 +332,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const AIChatbotScreen()));
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const AIChatBotScreen()));
         },
         backgroundColor: AppColors.secondary,
         foregroundColor: AppColors.white,

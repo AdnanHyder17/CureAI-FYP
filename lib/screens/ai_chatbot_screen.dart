@@ -1,631 +1,715 @@
-import 'dart:async';
-
-import 'package:flutter/material.dart';
-import 'package:p1/theme.dart';
-import 'package:http/http.dart' as http;
+// lib/screens/ai_chatbot_screen.dart
 import 'dart:convert';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart'; // For formatting dates
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:uuid/uuid.dart';
+
+import 'package:p1/theme.dart';
+import 'package:p1/widgets/loading_indicator.dart';
+import 'package:p1/widgets/custom_textfield.dart';
 
 // --- Data Models ---
 class ChatMessage {
-  final String id; // Firestore document ID for the message
+  final String id;
   final String text;
-  final bool isUserMessage;
+  final bool isUser;
   final DateTime timestamp;
-  final String? diagnosis;
+  final bool isDiagnosis; // Flag to indicate if this message contains diagnosis
 
   ChatMessage({
     required this.id,
     required this.text,
-    required this.isUserMessage,
+    required this.isUser,
     required this.timestamp,
-    this.diagnosis,
+    this.isDiagnosis = false,
   });
 
-  // Factory constructor to create a ChatMessage from a Firestore DocumentSnapshot
   factory ChatMessage.fromFirestore(DocumentSnapshot doc) {
     Map data = doc.data() as Map<String, dynamic>;
     return ChatMessage(
       id: doc.id,
       text: data['text'] ?? '',
-      isUserMessage: data['sender'] == 'user',
+      isUser: data['isUser'] ?? (data['role'] == 'user'), // Compatibility
       timestamp: (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      diagnosis: data['diagnosis'] as String?,
+      isDiagnosis: data['isDiagnosis'] ?? false,
     );
+  }
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'text': text,
+      'isUser': isUser,
+      'role': isUser ? 'user' : 'assistant',
+      'timestamp': Timestamp.fromDate(timestamp),
+      'isDiagnosis': isDiagnosis,
+    };
   }
 }
 
-class ChatSession {
+class ChatSessionMetadata {
   final String id;
-  final String title;
-  final DateTime lastUpdatedAt;
+  String name; // Allow renaming sessions later if needed
+  final DateTime createdAt;
+  String? lastMessageSnippet;
+  DateTime? lastActivityAt;
 
-  ChatSession({required this.id, required this.title, required this.lastUpdatedAt});
+  ChatSessionMetadata({
+    required this.id,
+    required this.name,
+    required this.createdAt,
+    this.lastMessageSnippet,
+    this.lastActivityAt,
+  });
 
-  factory ChatSession.fromFirestore(DocumentSnapshot doc) {
+  factory ChatSessionMetadata.fromFirestore(DocumentSnapshot doc) {
     Map data = doc.data() as Map<String, dynamic>;
-    // Generate a title if not present (e.g., from timestamp)
-    String title = data['title'] ?? 'Chat on ${DateFormat.yMd().add_jm().format((data['lastUpdatedAt'] as Timestamp?)?.toDate() ?? DateTime.now())}';
-    if (title.isEmpty) { // Fallback title if stored title is empty
-      title = 'Session ${doc.id.substring(0, 5)}...';
-    }
-
-    return ChatSession(
+    return ChatSessionMetadata(
       id: doc.id,
-      title: title,
-      lastUpdatedAt: (data['lastUpdatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      name: data['name'] ?? 'Session on ${DateFormat.yMd().add_jm().format((data['createdAt'] as Timestamp).toDate())}',
+      createdAt: (data['createdAt'] as Timestamp).toDate(),
+      lastMessageSnippet: data['lastMessageSnippet'] as String?,
+      lastActivityAt: (data['lastActivityAt'] as Timestamp?)?.toDate(),
+    );
+  }
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'name': name,
+      'createdAt': Timestamp.fromDate(createdAt),
+      'lastMessageSnippet': lastMessageSnippet,
+      'lastActivityAt': lastActivityAt != null ? Timestamp.fromDate(lastActivityAt!) : FieldValue.serverTimestamp(),
+    };
+  }
+}
+
+// --- API Service ---
+class AIChatService {
+  final String _apiBaseUrl = "https://5eae-2400-adc1-40d-2f00-5859-b363-cc6b-5441.ngrok-free.app/api/v1"; // Your ngrok URL
+
+  Future<Map<String, dynamic>> startSession(String patientId, String? medicalHistory) async {
+    debugPrint("[AIChatService] Starting session for patient: $patientId");
+    final response = await http.post(
+      Uri.parse('$_apiBaseUrl/session/start'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'patient_id': patientId, 'medical_history': medicalHistory}),
+    );
+    if (response.statusCode == 200) {
+      debugPrint("[AIChatService] Session started successfully. Response: ${response.body}");
+      return jsonDecode(response.body);
+    } else {
+      debugPrint("[AIChatService] Error starting session: ${response.statusCode} - ${response.body}");
+      throw Exception('Failed to start session: ${response.statusCode} ${response.body}');
+    }
+  }
+
+  Future<Map<String, dynamic>> sendMessage(String patientId, String userMessage) async {
+    debugPrint("[AIChatService] Sending message for patient $patientId: $userMessage");
+    final response = await http.post(
+      Uri.parse('$_apiBaseUrl/message'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'patient_id': patientId, 'user_message': userMessage}),
+    );
+    if (response.statusCode == 200) {
+      debugPrint("[AIChatService] Message sent successfully. Response: ${response.body}");
+      return jsonDecode(response.body);
+    } else {
+      debugPrint("[AIChatService] Error sending message: ${response.statusCode} - ${response.body}");
+      throw Exception('Failed to send message: ${response.statusCode} ${response.body}');
+    }
+  }
+  Future<void> resetBackendSession(String patientId) async {
+    debugPrint("[AIChatService] Resetting backend session for patient: $patientId");
+    final response = await http.post(
+      Uri.parse('$_apiBaseUrl/session/reset'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'patient_id': patientId, 'keep_system_prompt': false}), // Or true based on desired behavior
+    );
+    if (response.statusCode == 200) {
+      debugPrint("[AIChatService] Backend session reset successfully.");
+    } else {
+      debugPrint("[AIChatService] Error resetting backend session: ${response.statusCode} - ${response.body}");
+      // Optionally throw an exception or handle error
+    }
+  }
+}
+
+// --- ChangeNotifier for State Management ---
+class AIConversationProvider with ChangeNotifier {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final AIChatService _apiService = AIChatService();
+  final Uuid _uuid = const Uuid();
+
+  String? _currentPatientId;
+  String _patientMedicalHistory = "";
+  List<ChatSessionMetadata> _sessions = [];
+  String? _activeSessionId;
+  List<ChatMessage> _messages = [];
+
+  bool _isLoadingPatientData = true;
+  bool _isLoadingSessions = true;
+  bool _isLoadingMessages = false;
+  bool _isSendingMessage = false;
+  String? _errorMessage;
+
+  // Getters
+  bool get isLoadingPatientData => _isLoadingPatientData;
+  bool get isLoadingSessions => _isLoadingSessions;
+  bool get isLoadingMessages => _isLoadingMessages;
+  bool get isSendingMessage => _isSendingMessage;
+  List<ChatSessionMetadata> get sessions => _sessions;
+  String? get activeSessionId => _activeSessionId;
+  List<ChatMessage> get messages => _messages;
+  String? get errorMessage => _errorMessage;
+
+  AIConversationProvider() {
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      _errorMessage = "User not logged in.";
+      _isLoadingPatientData = false;
+      _isLoadingSessions = false;
+      notifyListeners();
+      return;
+    }
+    _currentPatientId = user.uid;
+    await _fetchPatientDataAndCompileHistory();
+    await _loadSessions();
+    if (_sessions.isNotEmpty) {
+      // Sort sessions by last activity or creation date to load the most recent one.
+      _sessions.sort((a, b) => (b.lastActivityAt ?? b.createdAt).compareTo(a.lastActivityAt ?? a.createdAt));
+      await selectSession(_sessions.first.id);
+    } else {
+      await startNewSession(); // Automatically start a new session if none exist
+    }
+    _isLoadingPatientData = false;
+    _isLoadingSessions = false;
+    notifyListeners();
+  }
+
+  Future<void> _fetchPatientDataAndCompileHistory() async {
+    if (_currentPatientId == null) return;
+    try {
+      DocumentSnapshot userDoc = await _firestore.collection('users').doc(_currentPatientId!).get();
+      DocumentSnapshot patientDoc = await _firestore.collection('patients').doc(_currentPatientId!).get();
+
+      Map<String, dynamic> userData = userDoc.exists ? userDoc.data() as Map<String, dynamic> : {};
+      Map<String, dynamic> patientData = patientDoc.exists ? patientDoc.data() as Map<String, dynamic> : {};
+
+      // Compile a comprehensive medical history string
+      List<String> historyParts = [];
+      historyParts.add("Patient Name: ${userData['nickname'] ?? 'N/A'}");
+      final age = patientData['basicInfo']?['age'] ?? patientData['age'];
+      if (age != null) historyParts.add("Age: $age");
+      final gender = patientData['basicInfo']?['gender'] ?? patientData['gender'];
+      if (gender != null) historyParts.add("Gender: $gender");
+
+      final healthProfile = patientData['healthProfile'] as Map<String, dynamic>? ?? {};
+      if ((healthProfile['chronicConditionsSelected'] as List<dynamic>? ?? []).isNotEmpty) {
+        historyParts.add("Chronic Conditions: ${(healthProfile['chronicConditionsSelected'] as List<dynamic>).join(', ')}");
+      }
+      if (healthProfile['chronicConditionsOther'] != null && (healthProfile['chronicConditionsOther'] as String).isNotEmpty) {
+        historyParts.add("Other Chronic Conditions: ${healthProfile['chronicConditionsOther']}");
+      }
+      if (healthProfile['allergiesDetails'] != null && (healthProfile['allergiesDetails'] as String).isNotEmpty) {
+        historyParts.add("Allergies: ${healthProfile['allergiesDetails']}");
+      }
+      // Add more fields as needed from patientData (e.g., medications, surgeries)
+
+      _patientMedicalHistory = historyParts.join("\n");
+      debugPrint("[AIProvider] Compiled Medical History: $_patientMedicalHistory");
+
+    } catch (e) {
+      _errorMessage = "Failed to load patient data.";
+      debugPrint("[AIProvider] Error fetching patient data: $e");
+    }
+    notifyListeners();
+  }
+
+  Future<void> _loadSessions() async {
+    if (_currentPatientId == null) return;
+    _isLoadingSessions = true;
+    notifyListeners();
+    try {
+      final snapshot = await _firestore
+          .collection('users')
+          .doc(_currentPatientId!)
+          .collection('aiChatSessions')
+          .orderBy('lastActivityAt', descending: true) // Or 'createdAt'
+          .get();
+      _sessions = snapshot.docs.map((doc) => ChatSessionMetadata.fromFirestore(doc)).toList();
+      debugPrint("[AIProvider] Loaded ${_sessions.length} sessions.");
+    } catch (e) {
+      _errorMessage = "Failed to load chat sessions.";
+      debugPrint("[AIProvider] Error loading sessions: $e");
+    }
+    _isLoadingSessions = false;
+    notifyListeners();
+  }
+
+  Future<void> startNewSession() async {
+    if (_currentPatientId == null) return;
+    _isSendingMessage = true; // Use this as a general "session starting" indicator
+    notifyListeners();
+
+    final newSessionId = _uuid.v4();
+    final newSession = ChatSessionMetadata(
+      id: newSessionId,
+      name: "Session - ${DateFormat.yMd().add_jm().format(DateTime.now())}",
+      createdAt: DateTime.now(),
+      lastActivityAt: DateTime.now(),
+    );
+
+    try {
+      // 1. Call backend to start/reset its context with patient history
+      await _apiService.startSession(_currentPatientId!, _patientMedicalHistory);
+
+      // 2. Create session metadata in Firestore
+      await _firestore
+          .collection('users')
+          .doc(_currentPatientId!)
+          .collection('aiChatSessions')
+          .doc(newSessionId)
+          .set(newSession.toFirestore());
+
+      _sessions.insert(0, newSession); // Add to top of list
+      await selectSession(newSessionId, isNewSession: true); // isNewSession skips loading messages
+      debugPrint("[AIProvider] New session started: $newSessionId");
+
+    } catch (e) {
+      _errorMessage = "Failed to start new session.";
+      debugPrint("[AIProvider] Error starting new session: $e");
+    }
+    _isSendingMessage = false;
+    notifyListeners();
+  }
+
+  Future<void> selectSession(String sessionId, {bool isNewSession = false}) async {
+    _activeSessionId = sessionId;
+    _messages = [];
+    _errorMessage = null;
+    if (!isNewSession) {
+      await _loadMessagesForSession(sessionId);
+    } else {
+      // For a new session, messages list is already empty.
+      // The initial system prompt from backend won't be shown unless we make a dummy call or backend sends it.
+      // For now, new session starts blank until user sends first message.
+      _isLoadingMessages = false; // No messages to load for a brand new session
+    }
+    debugPrint("[AIProvider] Session selected: $sessionId. New: $isNewSession");
+    notifyListeners();
+  }
+
+  Future<void> _loadMessagesForSession(String sessionId) async {
+    if (_currentPatientId == null) return;
+    _isLoadingMessages = true;
+    notifyListeners();
+    try {
+      final snapshot = await _firestore
+          .collection('users')
+          .doc(_currentPatientId!)
+          .collection('aiChatSessions')
+          .doc(sessionId)
+          .collection('messages')
+          .orderBy('timestamp', descending: false)
+          .get();
+      _messages = snapshot.docs.map((doc) => ChatMessage.fromFirestore(doc)).toList();
+      debugPrint("[AIProvider] Loaded ${_messages.length} messages for session $sessionId");
+    } catch (e) {
+      _errorMessage = "Failed to load messages.";
+      debugPrint("[AIProvider] Error loading messages for session $sessionId: $e");
+    }
+    _isLoadingMessages = false;
+    notifyListeners();
+  }
+
+  Future<void> deleteSession(String sessionId) async {
+    if (_currentPatientId == null) return;
+    try {
+      // Delete messages subcollection (batched delete for large histories if needed)
+      final messagesSnapshot = await _firestore
+          .collection('users')
+          .doc(_currentPatientId!)
+          .collection('aiChatSessions')
+          .doc(sessionId)
+          .collection('messages')
+          .get();
+      WriteBatch batch = _firestore.batch();
+      for (DocumentSnapshot doc in messagesSnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+
+      // Delete session metadata document
+      await _firestore
+          .collection('users')
+          .doc(_currentPatientId!)
+          .collection('aiChatSessions')
+          .doc(sessionId)
+          .delete();
+
+      _sessions.removeWhere((s) => s.id == sessionId);
+      if (_activeSessionId == sessionId) {
+        _activeSessionId = null;
+        _messages = [];
+        if (_sessions.isNotEmpty) {
+          await selectSession(_sessions.first.id);
+        } else {
+          await startNewSession(); // Start a new one if all are deleted
+        }
+      }
+      debugPrint("[AIProvider] Session deleted: $sessionId");
+    } catch (e) {
+      _errorMessage = "Failed to delete session.";
+      debugPrint("[AIProvider] Error deleting session $sessionId: $e");
+    }
+    notifyListeners();
+  }
+
+  Future<void> sendMessageToAI(String text) async {
+    if (_currentPatientId == null || _activeSessionId == null || text.trim().isEmpty) return;
+
+    final userMessage = ChatMessage(
+      id: _uuid.v4(),
+      text: text.trim(),
+      isUser: true,
+      timestamp: DateTime.now(),
+    );
+
+    _messages.add(userMessage);
+    _isSendingMessage = true;
+    notifyListeners();
+
+    try {
+      // Store user message in Firestore for the current session
+      await _firestore
+          .collection('users')
+          .doc(_currentPatientId!)
+          .collection('aiChatSessions')
+          .doc(_activeSessionId!)
+          .collection('messages')
+          .doc(userMessage.id)
+          .set(userMessage.toFirestore());
+
+      // Update session metadata (last message snippet and activity time)
+      await _firestore.collection('users').doc(_currentPatientId!).collection('aiChatSessions').doc(_activeSessionId!).update({
+        'lastMessageSnippet': text.trim().length > 50 ? '${text.trim().substring(0, 47)}...' : text.trim(),
+        'lastActivityAt': FieldValue.serverTimestamp(),
+      });
+
+
+      // Call backend API
+      final response = await _apiService.sendMessage(_currentPatientId!, text.trim());
+
+      final aiResponseText = response['response'] as String? ?? "Sorry, I couldn't process that.";
+      final bool diagnosisPerformed = response['diagnosis_performed'] as bool? ?? false;
+      final Map<String, dynamic>? latestDiagnosisData = response['latest_diagnosis'] as Map<String, dynamic>?;
+
+      String displayResponse = aiResponseText;
+      bool isDiagnosisMessage = false;
+
+      if (diagnosisPerformed && latestDiagnosisData != null) {
+        final diagnosisText = latestDiagnosisData['text'] as String? ?? "Diagnosis details not available.";
+        // The backend's response already includes the diagnosis text combined with a disclaimer.
+        // We'll use the 'response' field directly which should contain this combined text.
+        // displayResponse = "Diagnosis:\n$diagnosisText\n\nDISCLAIMER: This is not a definitive diagnosis. Please consult a healthcare professional for proper medical advice.";
+        isDiagnosisMessage = true; // Mark this message as containing the diagnosis
+      }
+
+      final aiMessage = ChatMessage(
+        id: _uuid.v4(),
+        text: displayResponse,
+        isUser: false,
+        timestamp: DateTime.now(),
+        isDiagnosis: isDiagnosisMessage,
+      );
+      _messages.add(aiMessage);
+
+      // Store AI message in Firestore
+      await _firestore
+          .collection('users')
+          .doc(_currentPatientId!)
+          .collection('aiChatSessions')
+          .doc(_activeSessionId!)
+          .collection('messages')
+          .doc(aiMessage.id)
+          .set(aiMessage.toFirestore());
+
+      // Update session metadata again for AI's message
+      await _firestore.collection('users').doc(_currentPatientId!).collection('aiChatSessions').doc(_activeSessionId!).update({
+        'lastMessageSnippet': displayResponse.length > 50 ? '${displayResponse.substring(0, 47)}...' : displayResponse,
+        'lastActivityAt': FieldValue.serverTimestamp(),
+      });
+
+
+    } catch (e) {
+      _errorMessage = "Failed to send message or get response.";
+      debugPrint("[AIProvider] Error sending message: $e");
+      final errorMessage = ChatMessage(
+        id: _uuid.v4(),
+        text: "Error: Could not connect to AI. Please try again. ($e)",
+        isUser: false,
+        timestamp: DateTime.now(),
+      );
+      _messages.add(errorMessage);
+    }
+    _isSendingMessage = false;
+    notifyListeners();
+  }
+}
+
+
+// --- UI Screen ---
+class AIChatBotScreen extends StatelessWidget {
+  const AIChatBotScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (_) => AIConversationProvider(),
+      child: const _AIChatBotScreenView(),
     );
   }
 }
 
-
-class AIChatbotScreen extends StatefulWidget {
-  const AIChatbotScreen({super.key});
+class _AIChatBotScreenView extends StatefulWidget {
+  const _AIChatBotScreenView();
 
   @override
-  State<AIChatbotScreen> createState() => _AIChatbotScreenState();
+  State<_AIChatBotScreenView> createState() => _AIChatBotScreenViewState();
 }
 
-class _AIChatbotScreenState extends State<AIChatbotScreen> {
-  final TextEditingController _messageController = TextEditingController();
+class _AIChatBotScreenViewState extends State<_AIChatBotScreenView> {
+  final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  final String _apiBaseUrl = "https://b79c-2404-3100-1451-8259-bc66-582-1744-975f.ngrok-free.app";
-
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  String? _currentUserId;
-  String? _currentSessionId;
-  List<ChatMessage> _messages = []; // Make sure this is initialized
-  List<ChatSession> _chatSessionsList = []; // Make sure this is initialized
-  bool _isLoadingResponse = false;
-  bool _isLoadingSessions = true; // Initialize to true
-  StreamSubscription? _messagesSubscription;
-
-
-  @override
-  void initState() {
-    super.initState();
-    _initializeUserAndLoadSessions();
-  }
 
   @override
   void dispose() {
-    _messageController.dispose();
+    _textController.dispose();
     _scrollController.dispose();
-    _messagesSubscription?.cancel();
     super.dispose();
   }
 
-  Future<void> _initializeUserAndLoadSessions() async {
-    if (!mounted) return;
-    setState(() => _isLoadingSessions = true);
-
-    final user = _auth.currentUser;
-    if (user == null) {
-      debugPrint("AIChatbotScreen: User not logged in during initialization.");
-      if (mounted) {
-        setState(() {
-          _isLoadingSessions = false;
-          _messages = [ChatMessage(id: 'error_no_user', text: "Authentication error. Please log in.", isUserMessage: false, timestamp: DateTime.now())];
-        });
-      }
-      return;
-    }
-    _currentUserId = user.uid;
-    debugPrint("AIChatbotScreen: Initialized with userId: $_currentUserId");
-
-    await _fetchChatSessions();
-
-    if (_chatSessionsList.isNotEmpty) {
-      debugPrint("AIChatbotScreen: Loading most recent session: ${_chatSessionsList.first.id}");
-      await _loadSession(_chatSessionsList.first.id);
-    } else {
-      debugPrint("AIChatbotScreen: No existing sessions found, starting a new one.");
-      await _startNewSession(isInitialSession: true);
-    }
-    if (mounted) {
-      setState(() => _isLoadingSessions = false);
-    }
-  }
-
-  Future<void> _fetchChatSessions() async {
-    if (_currentUserId == null) {
-      debugPrint("AIChatbotScreen: Cannot fetch sessions, userId is null.");
-      if (mounted) setState(() => _isLoadingSessions = false);
-      return;
-    }
-    if (!mounted) return;
-    setState(() => _isLoadingSessions = true);
-    try {
-      debugPrint("AIChatbotScreen: Fetching chat sessions for userId: $_currentUserId");
-      final snapshot = await _firestore
-          .collection('users')
-          .doc(_currentUserId)
-          .collection('aiChatSessions')
-          .orderBy('lastUpdatedAt', descending: true)
-          .get();
-      if (mounted) {
-        setState(() {
-          _chatSessionsList = snapshot.docs.map((doc) => ChatSession.fromFirestore(doc)).toList();
-          _isLoadingSessions = false;
-          debugPrint("AIChatbotScreen: Fetched ${_chatSessionsList.length} sessions.");
-        });
-      }
-    } catch (e) {
-      debugPrint("AIChatbotScreen: Error fetching chat sessions: $e");
-      if (mounted) {
-        setState(() => _isLoadingSessions = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error loading sessions: $e")));
-      }
-    }
-  }
-
-  Future<void> _startNewSession({bool fromDrawer = false, bool isInitialSession = false}) async {
-    if (_currentUserId == null) {
-      debugPrint("AIChatbotScreen: Cannot start new session, userId is null.");
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Cannot start session: User not identified.")));
-      return;
-    }
-    if (fromDrawer && Navigator.canPop(context) && _scaffoldKey.currentState?.isDrawerOpen == true) {
-      Navigator.pop(context);
-    }
-
-    if (mounted) {
-      setState(() {
-        _isLoadingResponse = true;
-        _messages = []; // Clear UI messages for the new session
-        _currentSessionId = null; // Explicitly nullify until new one is created
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) { // A
+        if (_scrollController.hasClients) { // B - Good to re-check
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
       });
     }
-    _messagesSubscription?.cancel(); // Cancel listener for old session messages
-
-    try {
-      final newSessionRef = _firestore
-          .collection('users')
-          .doc(_currentUserId!) // Assert non-null as we checked
-          .collection('aiChatSessions')
-          .doc(); // Auto-generate ID
-
-      final now = Timestamp.now();
-      String initialTitle = "Chat started ${DateFormat.yMd().add_jm().format(now.toDate())}";
-
-      await newSessionRef.set({
-        'title': initialTitle,
-        'userId': _currentUserId!,
-        'createdAt': now,
-        'lastUpdatedAt': now,
-      });
-      debugPrint("AIChatbotScreen: New session document CREATED with ID: ${newSessionRef.id}");
-
-      if (mounted) {
-        // Set the new session ID and load it (it will be empty or have a greeting)
-        await _loadSession(newSessionRef.id);
-        await _fetchChatSessions(); // Refresh session list in drawer
-      }
-
-      // Add initial greeting message to this new session
-      final greetingMessage = ChatMessage(
-          id: 'greeting_${newSessionRef.id}',
-          text: "Hello! I'm CureAI. How can I assist you in this new session?",
-          isUserMessage: false,
-          timestamp: DateTime.now()
-      );
-      // Ensure _currentSessionId is set by _loadSession before saving greeting
-      if (_currentSessionId == newSessionRef.id) {
-        await _saveMessageToCurrentSession(greetingMessage, isGreeting: true);
-      } else {
-        debugPrint("AIChatbotScreen: Mismatch session ID after new session creation. Not saving greeting to DB immediately.");
-      }
-
-
-    } catch (e) {
-      debugPrint("AIChatbotScreen: Error starting new session: $e");
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to start new session: ${e.toString()}")));
-    } finally {
-      if (mounted) {
-        setState(() { _isLoadingResponse = false; });
-      }
-    }
   }
 
-  Future<void> _loadSession(String sessionId) async {
-    if (_currentUserId == null) {
-      debugPrint("AIChatbotScreen: Cannot load session, userId is null.");
-      return;
-    }
-    if (mounted && Navigator.canPop(context) && _scaffoldKey.currentState?.isDrawerOpen == true) {
-      Navigator.pop(context); // Close drawer if opening from there
-    }
-    debugPrint("AIChatbotScreen: Loading session ID: $sessionId for user: $_currentUserId");
-
-    if(mounted) {
-      setState(() {
-        _currentSessionId = sessionId;
-        _messages = []; // Clear previous messages
-        _isLoadingResponse = true;
-      });
-    }
-
-    _messagesSubscription?.cancel();
-    _messagesSubscription = _firestore
-        .collection('users')
-        .doc(_currentUserId!)
-        .collection('aiChatSessions')
-        .doc(sessionId)
-        .collection('messages')
-        .orderBy('timestamp', descending: false)
-        .snapshots()
-        .listen((snapshot) {
-      if (mounted) {
-        setState(() {
-          _messages = snapshot.docs.map((doc) => ChatMessage.fromFirestore(doc)).toList();
-          _isLoadingResponse = false; // Stop loading once messages are fetched/updated
-        });
-        _scrollToBottom();
-        debugPrint("AIChatbotScreen: Loaded ${_messages.length} messages for session $sessionId.");
-      }
-    }, onError: (error) {
-      debugPrint("AIChatbotScreen: Error loading messages for session $sessionId: $error");
-      if(mounted) {
-        setState(() => _isLoadingResponse = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error loading messages: $error")));
-      }
-    });
-
-    // If after setting up the listener, the list is still empty (e.g., a truly new session), stop loading.
-    if (_messages.isEmpty && mounted) {
-      setState(() => _isLoadingResponse = false);
-    }
-  }
-
-  Future<void> _saveMessageToCurrentSession(ChatMessage message, {bool isGreeting = false}) async {
-    if (_currentUserId == null) {
-      debugPrint("AIChatbotScreen: Cannot save message, _currentUserId is null.");
-      return;
-    }
-    if (_currentSessionId == null) {
-      debugPrint("AIChatbotScreen: Cannot save message, _currentSessionId is null. Attempting to start a new session.");
-      // This indicates an issue, a session should always be active.
-      // As a safeguard, try to ensure a session exists.
-      await _startNewSession();
-      if(_currentSessionId == null) { // If still null after attempt
-        debugPrint("AIChatbotScreen: Failed to ensure session for saving message.");
-        return;
-      }
-    }
-    debugPrint("AIChatbotScreen: Saving message to session $_currentSessionId for user $_currentUserId: ${message.text}");
-
-    final messageData = {
-      'text': message.text,
-      'sender': message.isUserMessage ? 'user' : 'ai',
-      'timestamp': Timestamp.fromDate(message.timestamp),
-      'diagnosis': message.diagnosis,
-    };
-
-    try {
-      await _firestore
-          .collection('users')
-          .doc(_currentUserId!)
-          .collection('aiChatSessions')
-          .doc(_currentSessionId!)
-          .collection('messages')
-          .add(messageData);
-      debugPrint("AIChatbotScreen: Message saved successfully to Firestore.");
-
-      // Update session's lastUpdatedAt and title (if it's the first user message)
-      String currentSessionTitle = _chatSessionsList.firstWhere((s) => s.id == _currentSessionId, orElse: () => ChatSession(id: '', title: '', lastUpdatedAt: DateTime.now())).title;
-      bool isDefaultTitle = currentSessionTitle.startsWith("Chat started") || currentSessionTitle.startsWith("Session ");
-
-
-      Map<String, dynamic> sessionUpdateData = {
-        'lastUpdatedAt': Timestamp.now(),
-      };
-
-      // Update title only if it's the user's first message in this session and title is still default
-      if (message.isUserMessage && !isGreeting && isDefaultTitle && _messages.where((m) => m.isUserMessage).length <= 1) {
-        String newTitle = "Chat: ${message.text.length > 30 ? message.text.substring(0,27) + '...' : message.text}";
-        sessionUpdateData['title'] = newTitle;
-        debugPrint("AIChatbotScreen: Updating session title for $_currentSessionId to: $newTitle");
-      }
-
-      await _firestore
-          .collection('users')
-          .doc(_currentUserId!)
-          .collection('aiChatSessions')
-          .doc(_currentSessionId!)
-          .update(sessionUpdateData);
-
-      if (sessionUpdateData.containsKey('title')) {
-        await _fetchChatSessions(); // Refresh drawer if title potentially changed
-      }
-
-    } catch (e) {
-      debugPrint("AIChatbotScreen: Error saving message to Firestore: $e");
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to save message: ${e.toString()}")));
-    }
-  }
-
-  Future<void> _sendMessageToAPI(String text) async {
-    if (text.trim().isEmpty) return;
-    if (_currentUserId == null) {
-      debugPrint("AIChatbotScreen: Cannot send message, user not identified.");
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Cannot send message: User not identified.")));
-      return;
-    }
-    if (_currentSessionId == null) {
-      debugPrint("AIChatbotScreen: No active session. Starting new one before sending message.");
-      await _startNewSession(); // Ensure a session is active
-      if (_currentSessionId == null) { // If still null
-        debugPrint("AIChatbotScreen: Critical error - could not establish a session.");
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error: Could not establish a chat session.")));
-        return;
-      }
-    }
-
-    final userChatMessage = ChatMessage(
-        id: 'local_${DateTime.now().millisecondsSinceEpoch}', // Temporary local ID
-        text: text,
-        isUserMessage: true,
-        timestamp: DateTime.now());
-
-    setState(() {
-      _messages.add(userChatMessage);
-      _isLoadingResponse = true;
-    });
-    _messageController.clear();
-    _scrollToBottom();
-    await _saveMessageToCurrentSession(userChatMessage); // Save user message
-
-    try {
-      final response = await http.post(
-        Uri.parse('$_apiBaseUrl/api/v1/message'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'patient_id': _currentUserId!,
-          'user_message': text,
-          'conversation_id': _currentSessionId,
-        }),
-      );
-
-      String aiText;
-      String? diagnosisText;
-
-      if (response.statusCode == 200) {
-        final responseData = jsonDecode(response.body);
-        aiText = responseData['response'] as String? ?? "Sorry, I couldn't process that.";
-        final bool diagnosisPerformed = responseData['diagnosis_performed'] ?? false;
-        if (diagnosisPerformed && responseData['latest_diagnosis'] != null) {
-          diagnosisText = responseData['latest_diagnosis']['text'] as String?;
-        }
-      } else {
-        debugPrint("API Error: ${response.statusCode} ${response.body}");
-        aiText = "Error ${response.statusCode}: I'm having trouble reaching my knowledge base.";
-      }
-      final aiChatMessage = ChatMessage(
-        id: 'local_ai_${DateTime.now().millisecondsSinceEpoch}', // Temporary local ID
-        text: aiText,
-        isUserMessage: false,
-        timestamp: DateTime.now(),
-        diagnosis: diagnosisText,
-      );
-      // Add to UI and then save
-      if (mounted) {
-        setState(() { _messages.add(aiChatMessage);});
-      }
-      await _saveMessageToCurrentSession(aiChatMessage);
-
-    } catch (e) {
-      debugPrint("Network or parsing error: $e");
-      final errorMessage = "Sorry, I'm having trouble connecting. Please check your network and try again.";
-      final aiChatMessage = ChatMessage(
-        id: 'local_error_${DateTime.now().millisecondsSinceEpoch}',
-        text: errorMessage,
-        isUserMessage: false,
-        timestamp: DateTime.now(),
-      );
-      if (mounted) {
-        setState(() { _messages.add(aiChatMessage); });
-      }
-      await _saveMessageToCurrentSession(aiChatMessage);
-    } finally {
-      if (mounted) {
-        setState(() { _isLoadingResponse = false; });
-      }
-      _scrollToBottom();
-    }
-  }
-
-  // --- DELETE SESSION LOGIC ---
-  Future<void> _deleteSession(String sessionId) async {
-    if (_currentUserId == null) return;
-    if (Navigator.canPop(context) && _scaffoldKey.currentState?.isDrawerOpen == true) {
-      Navigator.pop(context); // Close drawer first
-    }
-
-    bool? confirmDelete = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Delete Session"),
-        content: const Text("Are you sure you want to delete this chat session and all its messages? This action cannot be undone."),
-        actions: [
-          TextButton(child: const Text("Cancel"), onPressed: () => Navigator.of(ctx).pop(false)),
-          TextButton(child: Text("Delete", style: TextStyle(color: AppColors.error)), onPressed: () => Navigator.of(ctx).pop(true)),
-        ],
-      ),
-    );
-
-    if (confirmDelete == true) {
-      debugPrint("AIChatbotScreen: Deleting session $sessionId for user $_currentUserId");
-      try {
-        // 1. Delete all messages in the subcollection (batched delete)
-        final messagesSnapshot = await _firestore
-            .collection('users')
-            .doc(_currentUserId!)
-            .collection('aiChatSessions')
-            .doc(sessionId)
-            .collection('messages')
-            .get();
-
-        WriteBatch batch = _firestore.batch();
-        for (DocumentSnapshot doc in messagesSnapshot.docs) {
-          batch.delete(doc.reference);
-        }
-        await batch.commit();
-        debugPrint("AIChatbotScreen: Deleted ${messagesSnapshot.docs.length} messages for session $sessionId.");
-
-        // 2. Delete the session document itself
-        await _firestore
-            .collection('users')
-            .doc(_currentUserId!)
-            .collection('aiChatSessions')
-            .doc(sessionId)
-            .delete();
-        debugPrint("AIChatbotScreen: Deleted session document $sessionId.");
-
-        // 3. Refresh UI
-        await _fetchChatSessions(); // Refresh the list in the drawer
-        if (_currentSessionId == sessionId) {
-          // If the deleted session was the active one, load the most recent or start new
-          if (_chatSessionsList.isNotEmpty) {
-            await _loadSession(_chatSessionsList.first.id);
-          } else {
-            await _startNewSession(isInitialSession: true);
-          }
-        }
-        if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Session deleted successfully.")));
-      } catch (e) {
-        debugPrint("AIChatbotScreen: Error deleting session $sessionId: $e");
-        if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to delete session: ${e.toString()}")));
-      }
-    }
-  }
-
-
-  // --- UI BUILD METHODS ---
   @override
-  Widget build(BuildContext context) { /* ... Same as your previous build method, ensure it uses _isLoadingSessions and _messages appropriately ... */
+  Widget build(BuildContext context) {
+    final provider = Provider.of<AIConversationProvider>(context);
+
+    // Scroll to bottom when messages change or keyboard appears
+    WidgetsBinding.instance.addPostFrameCallback((_) { // C
+      if (provider.messages.isNotEmpty || MediaQuery.of(context).viewInsets.bottom > 0) {
+        _scrollToBottom();
+      }
+    });
+
+
     return Scaffold(
-      key: _scaffoldKey,
       appBar: AppBar(
-        title: const Text('CureAI Chatbot', style: TextStyle(color: AppColors.white)),
-        backgroundColor: AppColors.primary,
-        iconTheme: const IconThemeData(color: AppColors.white),
-        leading: IconButton(
-          icon: const Icon(Icons.menu),
-          onPressed: () {
-            _scaffoldKey.currentState?.openDrawer();
+        title: provider.isLoadingSessions || provider.activeSessionId == null
+            ? const Text("AI Chatbot", style: TextStyle(color: AppColors.white))
+            : DropdownButton<String>(
+          value: provider.activeSessionId,
+          dropdownColor: AppColors.primary,
+          iconEnabledColor: AppColors.white,
+          underline: Container(),
+          items: [
+            ...provider.sessions.map((session) => DropdownMenuItem(
+              value: session.id,
+              child: Text(session.name, style: const TextStyle(color: AppColors.white, fontSize: 16)),
+            )),
+            const DropdownMenuItem<String>(
+              value: "_new_session_", // Special value for new session
+              child: Row(
+                children: [
+                  Icon(Icons.add_circle_outline, color: AppColors.white, size: 20),
+                  SizedBox(width: 8),
+                  Text("New Session", style: TextStyle(color: AppColors.white, fontSize: 16)),
+                ],
+              ),
+            ),
+          ],
+          onChanged: (String? sessionId) {
+            if (sessionId == "_new_session_") {
+              provider.startNewSession();
+            } else if (sessionId != null) {
+              provider.selectSession(sessionId);
+            }
           },
         ),
-      ),
-      drawer: _buildChatHistoryDrawer(),
-      body: Column(
-        children: [
-          Expanded(
-            child: (_currentUserId == null || (_isLoadingSessions && _messages.isEmpty && _currentSessionId == null))
-                ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-                : _messages.isEmpty && !_isLoadingResponse
-                ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.chat_bubble_outline_rounded, size: 60, color: AppColors.gray),
-                    const SizedBox(height: 16),
-                    const Text("No messages in this session yet.", style: TextStyle(color: AppColors.gray, fontSize: 16)),
-                    if (_currentSessionId == null) // Only show if no session ID (implies it's truly empty at start)
-                      const Text("Start a new conversation or select one from the history.", textAlign: TextAlign.center, style: TextStyle(color: AppColors.gray)),
-                  ],
-                )
-            )
-                : ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(16.0),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final message = _messages[index];
-                return _buildMessageBubble(message);
+        backgroundColor: AppColors.primary,
+        iconTheme: const IconThemeData(color: AppColors.white),
+        actions: [
+          if (provider.activeSessionId != null && provider.sessions.any((s) => s.id == provider.activeSessionId))
+            IconButton(
+              icon: const Icon(Icons.delete_outline_rounded, color: AppColors.white),
+              tooltip: "Delete Current Session",
+              onPressed: () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text("Delete Session?"),
+                    content: Text("Are you sure you want to delete the session '${provider.sessions.firstWhere((s) => s.id == provider.activeSessionId).name}'? This cannot be undone."),
+                    actions: [
+                      TextButton(child: const Text("Cancel"), onPressed: () => Navigator.of(ctx).pop(false)),
+                      TextButton(child: Text("Delete", style: TextStyle(color: AppColors.error)), onPressed: () => Navigator.of(ctx).pop(true)),
+                    ],
+                  ),
+                );
+                if (confirm == true && provider.activeSessionId != null) {
+                  provider.deleteSession(provider.activeSessionId!);
+                }
               },
             ),
-          ),
-          if (_isLoadingResponse && _messages.isNotEmpty)
+        ],
+      ),
+      body: Column(
+        children: [
+          if (provider.isLoadingPatientData || provider.isLoadingSessions && provider.sessions.isEmpty)
+            const Expanded(child: Center(child: LoadingIndicator(message: "Initializing Chat...")))
+          else if (provider.errorMessage != null)
+            Expanded(child: Center(child: Padding(padding: const EdgeInsets.all(16.0), child: Text("Error: ${provider.errorMessage}", style: const TextStyle(color: AppColors.error)))))
+          else
+            Expanded(
+              child: provider.isLoadingMessages
+                  ? const Center(child: LoadingIndicator(message: "Loading messages..."))
+                  : provider.messages.isEmpty && !provider.isSendingMessage
+                  ? _buildEmptyChatView(context, provider)
+                  : ListView.builder(
+                controller: _scrollController,
+                padding: const EdgeInsets.all(8.0),
+                itemCount: provider.messages.length,
+                itemBuilder: (context, index) {
+                  final message = provider.messages[index];
+                  // _scrollToBottom(); // D - Calling it here for every item is excessive
+                  // It was commented out in the full code, which is good.
+                  return _buildMessageBubble(message);
+                },
+              ),
+            ),
+          if (provider.isSendingMessage && provider.messages.isNotEmpty && provider.messages.last.isUser)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8.0),
-              child: LinearProgressIndicator(color: AppColors.primary, backgroundColor: AppColors.light),
+              child: LoadingIndicator(message: "CureAI is typing...", size: 20),
             ),
-          _buildMessageInputField(),
+          _buildInputField(context, provider),
         ],
       ),
     );
   }
+  Widget _buildEmptyChatView(BuildContext context, AIConversationProvider provider) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.chat_bubble_outline_rounded, size: 80, color: AppColors.gray.withOpacity(0.5)),
+            const SizedBox(height: 20),
+            Text(
+              "Hello! How can I help you today?",
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(color: AppColors.dark),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              "Describe your symptoms or health concerns to get started.",
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.gray),
+              textAlign: TextAlign.center,
+            ),
+            if (provider.sessions.length > 1 || (provider.sessions.length == 1 && provider.activeSessionId == null)) // If there are other sessions or current is placeholder
+              Padding(
+                padding: const EdgeInsets.only(top: 20.0),
+                child: TextButton.icon(
+                    icon: const Icon(Icons.history_rounded),
+                    label: const Text("View Past Sessions"),
+                    onPressed: () { /* Could open a dialog or drawer to explicitly select session */
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Use dropdown in AppBar to switch sessions.")));
+                    }
+                ),
+              )
+          ],
+        ),
+      ),
+    );
+  }
 
-  Widget _buildMessageBubble(ChatMessage message) { /* ... Same as your previous _buildMessageBubble ... */
-    final isUser = message.isUserMessage;
+
+  Widget _buildMessageBubble(ChatMessage message) {
+    final bool isUser = message.isUser;
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75), // Max width for bubbles
-        margin: const EdgeInsets.symmetric(vertical: 5.0),
-        padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0),
+        margin: const EdgeInsets.symmetric(vertical: 5.0, horizontal: 8.0),
+        padding: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 14.0),
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
         decoration: BoxDecoration(
-          color: isUser ? AppColors.primary : AppColors.light, // Changed AI bubble color
+          color: isUser ? AppColors.primary : AppColors.white,
           borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(18.0),
-            topRight: const Radius.circular(18.0),
-            bottomLeft: isUser ? const Radius.circular(18.0) : const Radius.circular(4.0), // Different corner for AI
-            bottomRight: isUser ? const Radius.circular(4.0) : const Radius.circular(18.0), // Different corner for user
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(isUser ? 16 : 4),
+            bottomRight: Radius.circular(isUser ? 4 : 16),
           ),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.07),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
+              blurRadius: 3,
+              offset: const Offset(0, 1),
             )
           ],
         ),
         child: Column(
           crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              message.text,
-              style: TextStyle(color: isUser ? AppColors.white : AppColors.dark, fontSize: 15.5),
-            ),
-            if (message.diagnosis != null && message.diagnosis!.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                    color: (isUser ? AppColors.white : AppColors.primary).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: (isUser ? AppColors.white : AppColors.primary).withOpacity(0.3))
+            message.isDiagnosis
+                ? MarkdownBody(
+              data: message.text, // Assume diagnosis is markdown formatted
+              styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                p: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: isUser ? AppColors.white : AppColors.dark,
+                  fontSize: 15.5,
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.medical_information_outlined, size: 16, color: isUser ? AppColors.white.withOpacity(0.8) : AppColors.primary),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        "Diagnosis: ${message.diagnosis}",
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontStyle: FontStyle.italic,
-                          color: (isUser ? AppColors.white : AppColors.dark).withOpacity(0.85),
-                        ),
-                      ),
-                    ),
-                  ],
+                // Add more styles for h1, h2, strong, em, etc. if your backend uses them for diagnosis
+                strong: TextStyle(fontWeight: FontWeight.bold, color: isUser ? AppColors.white : AppColors.dark),
+                listBullet:  Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: isUser ? AppColors.white : AppColors.dark,
                 ),
               ),
-            ],
+            )
+                : Text(
+              message.text,
+              style: TextStyle(
+                color: isUser ? AppColors.white : AppColors.dark,
+                fontSize: 15.5,
+              ),
+            ),
             const SizedBox(height: 5),
             Text(
-              "${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}",
+              DateFormat('HH:mm').format(message.timestamp),
               style: TextStyle(
-                fontSize: 10,
-                color: (isUser ? AppColors.white : AppColors.dark).withOpacity(0.6),
+                fontSize: 11,
+                color: isUser ? AppColors.white.withOpacity(0.7) : AppColors.gray,
               ),
             ),
           ],
@@ -634,197 +718,60 @@ class _AIChatbotScreenState extends State<AIChatbotScreen> {
     );
   }
 
-  Widget _buildMessageInputField() { /* ... Same as your previous _buildMessageInputField ... */
+  Widget _buildInputField(BuildContext context, AIConversationProvider provider) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+      padding: EdgeInsets.only(
+          left: 12.0,
+          right: 8.0,
+          top: 8.0,
+          bottom: MediaQuery.of(context).padding.bottom + 8.0 // SafeArea bottom padding
+      ),
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
+        color: AppColors.white,
         boxShadow: [
           BoxShadow(
             offset: const Offset(0, -1),
             blurRadius: 4,
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.grey.withOpacity(0.1),
           )
         ],
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Expanded(
-            child: TextField(
-              controller: _messageController,
-              textCapitalization: TextCapitalization.sentences,
-              minLines: 1,
-              maxLines: 4,
-              decoration: InputDecoration(
-                hintText: 'Message CureAI...',
-                fillColor: AppColors.light,
-                filled: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24.0),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-              ),
-              onSubmitted: _isLoadingResponse ? null : (text) => _sendMessageToAPI(text), // Pass text
-            ),
+              child: CustomTextField( // Using your CustomTextField
+                controller: _textController,
+                labelText: "Type your message...", // Used as hint effectively if border is none
+                hintText: "Describe your symptoms...",
+                maxLines: 1, // Can be set to more if desired
+                isDense: true,
+                // Custom styling for the input field itself
+                // This needs to be adapted if CustomTextField doesn't support all these directly
+                // For now, relying on CustomTextField's internal styling.
+              )
           ),
           const SizedBox(width: 8),
-          FloatingActionButton(
-            mini: true,
-            onPressed: _isLoadingResponse ? null : () => _sendMessageToAPI(_messageController.text), // Pass text
-            backgroundColor: AppColors.primary,
-            foregroundColor: AppColors.white,
-            elevation: 1,
-            child: _isLoadingResponse
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.send_rounded),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildChatHistoryDrawer() {
-    return Drawer(
-      child: Column(
-        children: [
-          UserAccountsDrawerHeader(
-            accountName: Text(
-                _auth.currentUser?.displayName ?? _auth.currentUser?.email?.split('@')[0] ?? "CureAI User",
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)
-            ),
-            accountEmail: Text(_auth.currentUser?.email ?? "", style: const TextStyle(fontSize: 13)),
-            currentAccountPicture: CircleAvatar(
-              backgroundColor: AppColors.secondary,
-              child: Text(
-                _auth.currentUser?.displayName?.isNotEmpty == true ? _auth.currentUser!.displayName![0].toUpperCase() :
-                _auth.currentUser?.email?.isNotEmpty == true ? _auth.currentUser!.email![0].toUpperCase() : "U",
-                style: const TextStyle(fontSize: 24.0, color: AppColors.white, fontWeight: FontWeight.bold),
-              ),
-            ),
-            decoration: const BoxDecoration(color: AppColors.primary),
-          ),
-          ListTile(
-            leading: const Icon(Icons.add_circle_outline, color: AppColors.primary),
-            title: const Text('Start New Chat Session', style: TextStyle(fontWeight: FontWeight.w500)),
-            onTap: () => _startNewSession(fromDrawer: true),
-          ),
-          const Divider(),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: Text("Past Conversations", style: TextStyle(color: AppColors.dark, fontWeight: FontWeight.bold, fontSize: 14)),
-          ),
-          Expanded(
-            child: _isLoadingSessions
-                ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-                : _chatSessionsList.isEmpty
-                ? const Center(child: Text('No past sessions found.', style: TextStyle(color: AppColors.gray)))
-                : ListView.builder(
-              itemCount: _chatSessionsList.length,
-              itemBuilder: (context, index) {
-                final session = _chatSessionsList[index];
-                bool isCurrent = session.id == _currentSessionId;
-                return Material(
-                  color: Colors.transparent, // Let ListTile handle its own selected color
-                  child: ListTile(
-                    leading: Icon(Icons.history_edu_outlined, color: isCurrent ? AppColors.primary : AppColors.gray),
-                    title: Text(
-                        session.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal, color: isCurrent ? AppColors.primary : AppColors.dark)
-                    ),
-                    subtitle: Text('Last activity: ${DateFormat.yMd().add_jm().format(session.lastUpdatedAt)}', style: const TextStyle(fontSize: 11, color: AppColors.gray)),
-                    tileColor: isCurrent ? AppColors.secondary.withOpacity(0.15) : null,
-                    trailing: IconButton( // Delete button for individual session
-                      icon: Icon(Icons.delete_outline, color: AppColors.error.withOpacity(0.7)),
-                      onPressed: () => _deleteSession(session.id),
-                      tooltip: "Delete session",
-                    ),
-                    onTap: () {
-                      if (!isCurrent) {
-                        _loadSession(session.id);
-                      } else {
-                        if (Navigator.canPop(context) && _scaffoldKey.currentState?.isDrawerOpen == true) Navigator.pop(context);
-                      }
-                    },
-                  ),
-                );
-              },
-            ),
-          ),
-          const Divider(),
-          ListTile(
-            leading: Icon(Icons.delete_sweep_outlined, color: AppColors.error.withOpacity(0.8)),
-            title: Text('Clear All Chat History', style: TextStyle(color: AppColors.error.withOpacity(0.9))),
-            onTap: () async {
-              if (Navigator.canPop(context) && _scaffoldKey.currentState?.isDrawerOpen == true) Navigator.pop(context);
-              bool? confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text("Delete Session"), // Minor: Title could be "Delete All Sessions"
-                    content: const Text("Are you sure you want to delete this chat session and all its messages? This action cannot be undone."), // Minor: Content could be "Are you sure you want to delete ALL chat sessions and their messages? This action cannot be undone."
-                    actions: [
-                      TextButton(child: const Text("Cancel"), onPressed: () => Navigator.of(ctx).pop(false)),
-                      TextButton(child: Text("Delete", style: TextStyle(color: AppColors.error)), onPressed: () => Navigator.of(ctx).pop(true)),
-                    ],
-                  )
-              );
-
-              if (confirm == true && _currentUserId != null) {
-                final sessionsCollection = _firestore.collection('users').doc(_currentUserId).collection('aiChatSessions');
-                final snapshot = await sessionsCollection.get();
-                WriteBatch batch = _firestore.batch();
-                for (var doc in snapshot.docs) {
-                  // For deleting subcollections robustly, a Cloud Function is better.
-                  // Client-side delete of subcollection messages first:
-                  final messagesSubCollection = await doc.reference.collection('messages').get();
-                  for (var msgDoc in messagesSubCollection.docs) {
-                    batch.delete(msgDoc.reference);
-                  }
-                  batch.delete(doc.reference); // This deletes the session document
-                }
-
-                await batch.commit();
-                debugPrint("AIChatbotScreen: Batch delete committed for all sessions and messages.");
-
-                if (mounted) {
-                  setState(() {
-                    _chatSessionsList = []; // Explicitly clear the local list for the drawer
-                    _messages = [];        // Clear current messages
-                    _currentSessionId = null; // No active session
-                    _isLoadingSessions = true; // Show loading while starting new
-                  });
-                }
-
-                // Now fetch (which should return empty) and start a new session
-                await _fetchChatSessions(); // This should now correctly fetch an empty list
-                await _startNewSession(isInitialSession: true);
-
-                if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("All chat history deleted.")));
-
+          MaterialButton(
+            onPressed: provider.isSendingMessage
+                ? null
+                : () {
+              if (_textController.text.trim().isNotEmpty) {
+                provider.sendMessageToAI(_textController.text.trim());
+                _textController.clear();
+                _scrollToBottom();
               }
             },
+            shape: const CircleBorder(),
+            color: AppColors.primary,
+            disabledColor: AppColors.gray,
+            padding: const EdgeInsets.all(12),
+            elevation: 1.0,
+            child: provider.isSendingMessage
+                ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.white))
+                : const Icon(Icons.send_rounded, color: AppColors.white, size: 24),
           ),
         ],
       ),
     );
   }
-
-  void _scrollToBottom() { // Same as before
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
 }
-
-
-

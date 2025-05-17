@@ -244,7 +244,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Widg
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const AIChatbotScreen()));
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const AIChatBotScreen()));
         },
         backgroundColor: AppColors.secondary,
         foregroundColor: AppColors.white,
