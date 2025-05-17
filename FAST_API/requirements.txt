@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pydantic
+firebase-admin
+groq
+colorama
+python-dotenv
+typing-extensions
+starlette
