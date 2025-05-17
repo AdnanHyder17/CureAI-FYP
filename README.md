@@ -262,21 +262,3 @@ The backend exposes the following main endpoints under the `/api/v1` prefix:
 * `GET /conversation/{patient_id}`: Retrieves conversation history for a patient.
 * `GET /diagnoses/{patient_id}`: Retrieves all stored diagnoses for a patient.
 * `GET /latest-diagnosis/{patient_id}`: Retrieves the most recent diagnosis for a patient.
-
-*(You can add more details here as your API evolves)*
-
-## Contributing
-
-*(Detail how others can contribute to your project, coding standards, pull request process, etc. if it's an open project. If not, you can omit or change this section.)*
-Example:
-We welcome contributions! Please see `CONTRIBUTING.md` for details on how to get started, report bugs, or suggest features.
-
-## License
-
-*(Specify the license for your project. E.g., MIT, Apache 2.0, or proprietary)*
-Example:
-<<<<<<< HEAD
-This project is licensed under the MIT License - see the `LICENSE.md` file for details.
-=======
-This project is licensed under the MIT License - see the `LICENSE.md` file for details.
->>>>>>> bceb99b5b140e8554fa81f9d1ae7c6069f0b5061
