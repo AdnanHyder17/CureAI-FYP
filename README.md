@@ -275,4 +275,8 @@ We welcome contributions! Please see `CONTRIBUTING.md` for details on how to get
 
 *(Specify the license for your project. E.g., MIT, Apache 2.0, or proprietary)*
 Example:
+<<<<<<< HEAD
 This project is licensed under the MIT License - see the `LICENSE.md` file for details.
+=======
+This project is licensed under the MIT License - see the `LICENSE.md` file for details.
+>>>>>>> bceb99b5b140e8554fa81f9d1ae7c6069f0b5061
