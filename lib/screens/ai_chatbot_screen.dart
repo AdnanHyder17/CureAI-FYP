@@ -72,7 +72,8 @@ class _AIChatbotScreenState extends State<AIChatbotScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  final String _apiBaseUrl = "https://fed2-2400-adc1-40d-2f00-591c-ae62-a8dc-3439.ngrok-free.app"; // EXAMPLE: For Android Emulator. **ADJUST THIS**
+  final String _apiBaseUrl = "https://b79c-2404-3100-1451-8259-bc66-582-1744-975f.ngrok-free.app";
+
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   String? _currentUserId;

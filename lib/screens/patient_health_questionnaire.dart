@@ -1,10 +1,14 @@
+// lib/screens/patient_health_questionnaire.dart
 // ignore_for_file: library_private_types_in_public_api, use_build_context_synchronously
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:p1/screens/homeScreen.dart'; // Assuming this is the patient's home screen
+import 'package:p1/screens/homeScreen.dart';
 import 'package:p1/theme.dart';
+import 'package:p1/widgets/custom_textfield.dart'; // Reusable text field
+import 'package:p1/widgets/loading_indicator.dart'; // Reusable loading indicator
+import 'package:p1/screens/login_screen.dart';
 
 class PatientHealthQuestionnaire extends StatefulWidget {
   const PatientHealthQuestionnaire({super.key});
@@ -14,90 +18,77 @@ class PatientHealthQuestionnaire extends StatefulWidget {
       _PatientHealthQuestionnaireState();
 }
 
-class _PatientHealthQuestionnaireState
-    extends State<PatientHealthQuestionnaire> {
+class _PatientHealthQuestionnaireState extends State<PatientHealthQuestionnaire> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   int _currentStep = 0;
   bool _isSubmitting = false;
 
-  // --- State Variables for Questionnaire Data ---
+  // --- Form Data ---
 
-  // Basic
+  // Basic Info
   final TextEditingController _ageController = TextEditingController();
+  String? _selectedGender; // Example: Male, Female, Other
+  final List<String> _genderOptions = ['Male', 'Female', 'Prefer not to say', 'Other'];
+
 
   // Health Profile
-  bool _hasChronicConditions = false; // NEW: Main Yes/No for chronic conditions
+  bool _hasChronicConditions = false;
   final Map<String, bool> _chronicConditionsSelected = {
-    'Diabetes': false,
-    'Hypertension': false,
-    'Cardiovascular Disease': false,
-    'Thyroid Disorders': false,
+    'Diabetes': false, 'Hypertension (High Blood Pressure)': false, 'Asthma': false,
+    'Heart Disease': false, 'Kidney Disease': false, 'Thyroid Disorder': false,
   };
   final TextEditingController _chronicConditionsOtherController = TextEditingController();
-  bool _hasOtherChronicConditions = false;
 
-  bool _hasFamilyHistory = false; // NEW: Main Yes/No for family history
+  bool _hasFamilyHistory = false;
   final Map<String, bool> _familyHealthHistorySelected = {
-    'Heart Diseases': false,
-    'Diabetes': false,
-    'Cancer': false,
-    'Osteoporosis': false,
+    'Diabetes': false, 'Heart Disease': false, 'Hypertension': false,
+    'Stroke': false, 'Cancer': false, 'Mental Health Conditions': false,
   };
   final TextEditingController _familyHealthHistoryOtherController = TextEditingController();
-  bool _hasOtherFamilyHistory = false;
 
-  bool _hasAllergies = false; // Existing: Main Yes/No for allergies
-  final Map<String, bool> _knownAllergiesSelected = {
-    'Soy': false,
-    'Dairy/Lactose': false,
-    'Fish/Shellfish': false,
-  };
-  final TextEditingController _knownAllergiesOtherController = TextEditingController();
-  bool _hasOtherAllergies = false; // Existing: For the "Other Allergies"
+  bool _hasAllergies = false;
+  final TextEditingController _allergiesDetailsController = TextEditingController(); // Single field for all allergies
 
   bool _hasSurgicalHistory = false;
   final TextEditingController _surgicalHistoryDetailsController = TextEditingController();
 
   bool _takingCurrentMedications = false;
-  final TextEditingController _currentMedicationsController = TextEditingController();
+  final TextEditingController _currentMedicationsDetailsController = TextEditingController(); // Includes OTC & supplements
 
-  bool _hasMedicationHistory = false;
-  final TextEditingController _medicationHistoryController = TextEditingController();
+  // Lifestyle Habits
+  String? _selectedSmokingStatus; // Non-smoker, Former smoker, Current smoker
+  final List<String> _smokingStatusOptions = ['Non-smoker', 'Former smoker', 'Current smoker (Daily)', 'Current smoker (Occasionally)'];
+  final TextEditingController _smokingDetailsController = TextEditingController(); // If current/former, details
 
-  // Life Patterns & Habits
-  String? _selectedSmokingIntensity;
-  final List<String> _smokingOptions = [
-    'Non-smoker', '1-10 cigarettes', 'About 1 pack', 'More than 1 pack', 'Electronic cigarettes/vaping'
-  ];
+  String? _selectedAlcoholConsumption; // Never, Rarely, Moderately, Frequently
+  final List<String> _alcoholConsumptionOptions = ['Never', 'Rarely (Socially/Monthly)', 'Moderately (Weekly)', 'Frequently (Daily/Almost Daily)'];
+  final TextEditingController _alcoholDetailsController = TextEditingController();
 
-  String? _selectedAlcoholIntake;
-  final List<String> _alcoholOptions = [
-    'Non-drinker', '1-3 standard drinks', '4-7 standard drinks', '8-14 standard drinks', '15+ standard drinks'
-  ];
-
-  String? _selectedDietaryHabitGeneral;
+  String? _selectedDietaryHabits; // Balanced, Vegetarian, Vegan, Low-carb, etc.
   final List<String> _dietaryHabitOptions = [
-    'Non-specific diet', 'Balanced meals', 'Frequent Fast Food', 'Specific diet plan'
+    'Generally balanced', 'High in processed foods', 'Vegetarian', 'Vegan',
+    'Low-carb (Keto, Atkins)', 'Low-fat', 'Gluten-free', 'Other specific diet'
   ];
-  final TextEditingController _dietaryHabitsSpecificPlanController = TextEditingController();
+  final TextEditingController _dietaryHabitsOtherController = TextEditingController();
 
-  String? _selectedPhysicalActivityLevel;
+  String? _selectedPhysicalActivityLevel; // Sedentary, Light, Moderate, Vigorous
   final List<String> _physicalActivityOptions = [
-    'Inactive (No regular physical activity or structured exercise)',
-    'Lightly active (Light physical activities such as walking or leisurely cycling)',
-    'Moderately active (Regular moderate exercises like running, swimming, or playing sports)',
-    'Very active (Frequent intense physical activities, like workouts or competitive sports)'
+    'Sedentary (Little to no exercise)',
+    'Lightly active (Light exercise/sports 1-3 days/week)',
+    'Moderately active (Moderate exercise/sports 3-5 days/week)',
+    'Very active (Hard exercise/sports 6-7 days a week)',
+    'Extremely active (Very hard exercise/physical job)'
   ];
 
-  String? _selectedSleepPattern;
-  final List<String> _sleepPatternOptions = [
-    '7-9 hours', 'Less than 6 hours', 'More than 9 hours', 'Varies significantly or interrupted sleep'
-  ];
+  String? _selectedSleepDuration; // e.g. <6 hours, 7-8 hours, >9 hours
+  final List<String> _sleepDurationOptions = ['Less than 5 hours', '5-6 hours', '7-8 hours', 'More than 8 hours'];
+  String? _selectedSleepQuality; // Good, Fair, Poor
+  final List<String> _sleepQualityOptions = ['Good (Wake up refreshed)', 'Fair (Somewhat restful)', 'Poor (Wake up tired)'];
 
-  String? _selectedStressLevel;
-  final List<String> _stressLevelOptions = [
-    'Rarely stressed', 'Manageable stress', 'Regular (daily) stress', 'Almost always stressed'
-  ];
+
+  String? _selectedStressLevel; // Low, Moderate, High
+  final List<String> _stressLevelOptions = ['Low (Rarely stressed)', 'Moderate (Manageable stress)', 'High (Frequently stressed)', 'Very High (Constantly stressed)'];
+  final TextEditingController _stressCopingMechanismsController = TextEditingController();
 
   // Firebase
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -108,21 +99,23 @@ class _PatientHealthQuestionnaireState
     _ageController.dispose();
     _chronicConditionsOtherController.dispose();
     _familyHealthHistoryOtherController.dispose();
-    _knownAllergiesOtherController.dispose();
+    _allergiesDetailsController.dispose();
     _surgicalHistoryDetailsController.dispose();
-    _currentMedicationsController.dispose();
-    _medicationHistoryController.dispose();
-    _dietaryHabitsSpecificPlanController.dispose();
+    _currentMedicationsDetailsController.dispose();
+    _smokingDetailsController.dispose();
+    _alcoholDetailsController.dispose();
+    _dietaryHabitsOtherController.dispose();
+    _stressCopingMechanismsController.dispose();
     super.dispose();
   }
 
   Future<void> _saveData() async {
     if (!_formKey.currentState!.validate()) {
-      int errorStep = _findErrorStep();
-      if (errorStep != -1 && errorStep != _currentStep) {
-        setState(() {
-          _currentStep = errorStep;
-        });
+      // Find the first step with an error and navigate to it
+      for (int i = 0; i < getSteps(context).length; i++) {
+        // This is a bit tricky as validation happens on the overall form.
+        // A more robust solution would be per-step validation or focusing on the first invalid field.
+        // For now, just show a general message.
       }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please review your answers. Some required fields are missing or invalid.'), backgroundColor: AppColors.error),
@@ -130,59 +123,72 @@ class _PatientHealthQuestionnaireState
       return;
     }
     _formKey.currentState!.save();
-
-    setState(() { _isSubmitting = true; });
+    setState(() => _isSubmitting = true);
 
     if (_currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('User not logged in. Cannot save data.'), backgroundColor: AppColors.error),
       );
-      setState(() { _isSubmitting = false; });
+      setState(() => _isSubmitting = false);
       return;
     }
 
     Map<String, dynamic> patientData = {
-      'age': int.tryParse(_ageController.text) ?? 0,
+      'uid': _currentUser!.uid,
+      'email': _currentUser!.email, // Denormalize for easier access if needed
+      'lastUpdated': FieldValue.serverTimestamp(),
+      'createdAt': _profileData['createdAt'] ?? FieldValue.serverTimestamp(), // Preserve if editing
+
+      'basicInfo': {
+        'age': int.tryParse(_ageController.text.trim()) ?? 0,
+        'gender': _selectedGender,
+      },
       'healthProfile': {
         'hasChronicConditions': _hasChronicConditions,
-        'chronicConditionsSelected': _hasChronicConditions ? _chronicConditionsSelected : _chronicConditionsSelected.map((key, value) => MapEntry(key, false)),
-        'chronicConditionsOther': (_hasChronicConditions && _hasOtherChronicConditions) ? _chronicConditionsOtherController.text.trim() : '',
+        'chronicConditionsSelected': _hasChronicConditions ? _chronicConditionsSelected.entries.where((e)=>e.value).map((e)=>e.key).toList() : [],
+        'chronicConditionsOther': (_hasChronicConditions && _chronicConditionsOtherController.text.trim().isNotEmpty) ? _chronicConditionsOtherController.text.trim() : '',
 
         'hasFamilyHistory': _hasFamilyHistory,
-        'familyHealthHistorySelected': _hasFamilyHistory ? _familyHealthHistorySelected : _familyHealthHistorySelected.map((key, value) => MapEntry(key, false)),
-        'familyHealthHistoryOther': (_hasFamilyHistory && _hasOtherFamilyHistory) ? _familyHealthHistoryOtherController.text.trim() : '',
+        'familyHealthHistorySelected': _hasFamilyHistory ? _familyHealthHistorySelected.entries.where((e)=>e.value).map((e)=>e.key).toList() : [],
+        'familyHealthHistoryOther': (_hasFamilyHistory && _familyHealthHistoryOtherController.text.trim().isNotEmpty) ? _familyHealthHistoryOtherController.text.trim() : '',
 
         'hasAllergies': _hasAllergies,
-        'knownAllergiesSelected': _hasAllergies ? _knownAllergiesSelected : _knownAllergiesSelected.map((key, value) => MapEntry(key, false)),
-        'knownAllergiesOther': (_hasAllergies && _hasOtherAllergies) ? _knownAllergiesOtherController.text.trim() : '',
+        'allergiesDetails': _hasAllergies ? _allergiesDetailsController.text.trim() : '',
 
         'hasSurgicalHistory': _hasSurgicalHistory,
-        'surgicalHistory': _hasSurgicalHistory ? (_surgicalHistoryDetailsController.text.trim().isEmpty ? 'Details not provided' : _surgicalHistoryDetailsController.text.trim()) : 'None',
+        'surgicalHistoryDetails': _hasSurgicalHistory ? _surgicalHistoryDetailsController.text.trim() : '',
 
         'takingCurrentMedications': _takingCurrentMedications,
-        'currentMedications': _takingCurrentMedications ? (_currentMedicationsController.text.trim().isEmpty ? 'None specified' : _currentMedicationsController.text.trim()) : 'None',
-
-        'hasMedicationHistory': _hasMedicationHistory,
-        'medicationHistoryLast6Months': _hasMedicationHistory ? (_medicationHistoryController.text.trim().isEmpty ? 'None specified' : _medicationHistoryController.text.trim()) : 'None',
+        'currentMedicationsDetails': _takingCurrentMedications ? _currentMedicationsDetailsController.text.trim() : '',
       },
-      'lifePatternsHabits': {
-        'smokingIntensity': _selectedSmokingIntensity ?? 'Not specified',
-        'alcoholIntake': _selectedAlcoholIntake ?? 'Not specified',
-        'dietaryHabitsGeneral': _selectedDietaryHabitGeneral ?? 'Not specified',
-        'dietaryHabitsSpecificPlanDetails': _selectedDietaryHabitGeneral == 'Specific diet plan'
-            ? _dietaryHabitsSpecificPlanController.text.trim()
-            : '',
-        'physicalActivityLevel': _selectedPhysicalActivityLevel ?? 'Not specified',
-        // 'physicalActivityDescription' is removed as per your request
-        'sleepPattern': _selectedSleepPattern ?? 'Not specified',
-        'stressLevel': _selectedStressLevel ?? 'Not specified',
+      'lifestyleHabits': {
+        'smokingStatus': _selectedSmokingStatus,
+        'smokingDetails': (_selectedSmokingStatus == 'Former smoker' || _selectedSmokingStatus?.startsWith('Current smoker') == true) ? _smokingDetailsController.text.trim() : '',
+        'alcoholConsumption': _selectedAlcoholConsumption,
+        'alcoholDetails': (_selectedAlcoholConsumption == 'Moderately (Weekly)' || _selectedAlcoholConsumption == 'Frequently (Daily/Almost Daily)') ? _alcoholDetailsController.text.trim() : '',
+        'dietaryHabits': _selectedDietaryHabits,
+        'dietaryHabitsOther': (_selectedDietaryHabits == 'Other specific diet') ? _dietaryHabitsOtherController.text.trim() : '',
+        'physicalActivityLevel': _selectedPhysicalActivityLevel,
+        'sleepDuration': _selectedSleepDuration,
+        'sleepQuality': _selectedSleepQuality,
+        'stressLevel': _selectedStressLevel,
+        'stressCopingMechanisms': _stressCopingMechanismsController.text.trim(),
       },
-      'lastUpdated': FieldValue.serverTimestamp(),
-      'userId': _currentUser!.uid,
     };
+    // Add existing profile data if any (especially profileImageUrl from 'users' or 'patients' collection)
+    if (_profileData.containsKey('profileImageUrl')) {
+      patientData['profileImageUrl'] = _profileData['profileImageUrl'];
+    }
+
 
     try {
       await _firestore.collection('patients').doc(_currentUser!.uid).set(patientData, SetOptions(merge: true));
+
+      // Update the users collection to mark profile as complete
+      await _firestore.collection('users').doc(_currentUser!.uid).update({
+        'isProfileSetupComplete': true,
+      });
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Health information saved successfully!'), backgroundColor: AppColors.success),
       );
@@ -197,33 +203,83 @@ class _PatientHealthQuestionnaireState
         SnackBar(content: Text('Failed to save data: ${e.toString()}'), backgroundColor: AppColors.error),
       );
     } finally {
-      if (mounted) {
-        setState(() { _isSubmitting = false; });
-      }
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
+  // To store loaded profile data if user is editing
+  Map<String, dynamic> _profileData = {};
 
-  int _findErrorStep() {
-    // Basic check, can be made more sophisticated
-    if (_ageController.text.isEmpty || (int.tryParse(_ageController.text) ?? 0) <= 0) return 0;
-    // Add more checks for other steps if needed for direct navigation to error
-    return -1; // No obvious error found by this basic check
+  @override
+  void initState() {
+    super.initState();
+    _loadPatientDataForEditing(); // Load data if user is editing
+  }
+
+  Future<void> _loadPatientDataForEditing() async {
+    if (_currentUser == null) return;
+    setState(() => _isSubmitting = true); // Use _isSubmitting as a general loading flag here
+
+    try {
+      DocumentSnapshot patientDoc = await _firestore.collection('patients').doc(_currentUser!.uid).get();
+      if (mounted && patientDoc.exists) {
+        _profileData = patientDoc.data() as Map<String, dynamic>;
+
+        // Basic Info
+        _ageController.text = (_profileData['basicInfo']?['age'] ?? '').toString();
+        _selectedGender = _profileData['basicInfo']?['gender'];
+
+        // Health Profile
+        final healthProfile = _profileData['healthProfile'] as Map<String, dynamic>? ?? {};
+        _hasChronicConditions = healthProfile['hasChronicConditions'] ?? false;
+        _chronicConditionsOtherController.text = healthProfile['chronicConditionsOther'] ?? '';
+        (healthProfile['chronicConditionsSelected'] as List<dynamic>? ?? []).forEach((item) {
+          if (_chronicConditionsSelected.containsKey(item)) _chronicConditionsSelected[item] = true;
+        });
+
+        _hasFamilyHistory = healthProfile['hasFamilyHistory'] ?? false;
+        _familyHealthHistoryOtherController.text = healthProfile['familyHealthHistoryOther'] ?? '';
+        (healthProfile['familyHealthHistorySelected'] as List<dynamic>? ?? []).forEach((item) {
+          if (_familyHealthHistorySelected.containsKey(item)) _familyHealthHistorySelected[item] = true;
+        });
+
+        _hasAllergies = healthProfile['hasAllergies'] ?? false;
+        _allergiesDetailsController.text = healthProfile['allergiesDetails'] ?? '';
+        _hasSurgicalHistory = healthProfile['hasSurgicalHistory'] ?? false;
+        _surgicalHistoryDetailsController.text = healthProfile['surgicalHistoryDetails'] ?? '';
+        _takingCurrentMedications = healthProfile['takingCurrentMedications'] ?? false;
+        _currentMedicationsDetailsController.text = healthProfile['currentMedicationsDetails'] ?? '';
+
+        // Lifestyle Habits
+        final lifestyle = _profileData['lifestyleHabits'] as Map<String, dynamic>? ?? {};
+        _selectedSmokingStatus = lifestyle['smokingStatus'];
+        _smokingDetailsController.text = lifestyle['smokingDetails'] ?? '';
+        _selectedAlcoholConsumption = lifestyle['alcoholConsumption'];
+        _alcoholDetailsController.text = lifestyle['alcoholDetails'] ?? '';
+        _selectedDietaryHabits = lifestyle['dietaryHabits'];
+        _dietaryHabitsOtherController.text = lifestyle['dietaryHabitsOther'] ?? '';
+        _selectedPhysicalActivityLevel = lifestyle['physicalActivityLevel'];
+        _selectedSleepDuration = lifestyle['sleepDuration'];
+        _selectedSleepQuality = lifestyle['sleepQuality'];
+        _selectedStressLevel = lifestyle['stressLevel'];
+        _stressCopingMechanismsController.text = lifestyle['stressCopingMechanisms'] ?? '';
+
+      }
+    } catch (e) {
+      debugPrint("Error loading existing patient data: $e");
+      // Handle error appropriately, maybe show a snackbar
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
   }
 
 
   void _nextStep() {
-    // It's better to validate per step if possible, but for now, validate on final submit
-    // if (_formKey.currentState!.validate()) { // This would validate all steps
-    if (_currentStep < getSteps().length - 1) {
+    // Optional: Add per-step validation here if desired
+    if (_currentStep < getSteps(context).length - 1) {
       setState(() => _currentStep += 1);
     } else {
-      _saveData(); // SaveData now includes validation
+      _saveData();
     }
-    // } else {
-    //   ScaffoldMessenger.of(context).showSnackBar(
-    //     const SnackBar(content: Text('Please complete the current step before proceeding.'), backgroundColor: AppColors.warning),
-    //   );
-    // }
   }
 
   void _prevStep() {
@@ -232,668 +288,329 @@ class _PatientHealthQuestionnaireState
     }
   }
 
-  List<Step> getSteps() {
-    return [
-      Step(
-        title: const Text('Basic Information'),
-        content: _buildAgeStep(),
-        isActive: _currentStep >= 0,
-        state: _currentStep > 0 ? StepState.complete : StepState.indexed,
-      ),
-      Step(
-        title: const Text('Health Profile - Conditions'),
-        content: _buildChronicConditionsStep(),
-        isActive: _currentStep >= 1,
-        state: _currentStep > 1 ? StepState.complete : StepState.indexed,
-      ),
-      Step(
-        title: const Text('Health Profile - Family & Allergies'),
-        content: _buildFamilyAndAllergiesStep(),
-        isActive: _currentStep >= 2,
-        state: _currentStep > 2 ? StepState.complete : StepState.indexed,
-      ),
-      Step(
-        title: const Text('Health Profile - Medical History'),
-        content: _buildMedicalHistoryStep(),
-        isActive: _currentStep >= 3,
-        state: _currentStep > 3 ? StepState.complete : StepState.indexed,
-      ),
-      Step(
-        title: const Text('Lifestyle - Habits'),
-        content: _buildHabitsStep(),
-        isActive: _currentStep >= 4,
-        state: _currentStep > 4 ? StepState.complete : StepState.indexed,
-      ),
-      Step(
-        title: const Text('Lifestyle - Activity & Diet'),
-        content: _buildActivityAndDietStep(),
-        isActive: _currentStep >= 5,
-        state: _currentStep > 5 ? StepState.complete : StepState.indexed,
-      ),
-      Step(
-        title: const Text('Lifestyle - Sleep & Stress'),
-        content: _buildSleepAndStressStep(),
-        isActive: _currentStep >= 6,
-        state: _currentStep > 6 ? StepState.complete : StepState.indexed,
-      ),
-    ];
-  }
-
-  // --- Step Builder Methods ---
-
-  Widget _buildAgeStep() {
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SectionHeader(icon: Icons.cake_outlined, title: "Your Age"),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _ageController,
-              decoration: _inputDecoration(labelText: 'Age', hintText: 'e.g., 30'),
-              keyboardType: TextInputType.number,
-              validator: (value) {
-                if (value == null || value.isEmpty) return 'Please enter your age.';
-                final age = int.tryParse(value);
-                if (age == null || age <= 0 || age > 120) {
-                  return 'Please enter a valid age (1-120).';
-                }
-                return null;
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildChronicConditionsStep() {
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SectionHeader(icon: Icons.medical_information_outlined, title: "Chronic & Past Conditions"),
-            const SizedBox(height: 16),
-            _buildExpandableField( // Main Yes/No for the whole section
-              question: "Do you have any chronic or significant past health conditions?",
-              hasContent: _hasChronicConditions,
-              onChanged: (value) => setState(() {
-                _hasChronicConditions = value;
-                if (!value) { // If "No", clear sub-selections
-                  _chronicConditionsSelected.updateAll((key, val) => false);
-                  _hasOtherChronicConditions = false;
-                  _chronicConditionsOtherController.clear();
-                }
-              }),
-              showDivider: false, // No divider before the checkboxes if "Yes"
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 8),
-                  Text("Please select from common conditions:", style: Theme.of(context).textTheme.titleSmall),
-                  ..._buildCheckboxList(
-                    options: _chronicConditionsSelected,
-                    onChanged: (key, value) {
-                      setState(() { _chronicConditionsSelected[key] = value!; });
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  _buildExpandableField( // Nested Yes/No for "Other"
-                    question: "Any other chronic conditions to specify?",
-                    hasContent: _hasOtherChronicConditions,
-                    onChanged: (value) => setState(() => _hasOtherChronicConditions = value),
-                    child: TextFormField(
-                      controller: _chronicConditionsOtherController,
-                      decoration: _inputDecoration(
-                        labelText: 'Other conditions/details',
-                        hintText: 'e.g., Asthma, High blood pressure for 5 years.',
-                      ),
-                      maxLines: 3,
-                      validator: (value) {
-                        if (_hasOtherChronicConditions && (value == null || value.isEmpty)) {
-                          return 'Please provide details or select "No".';
-                        }
-                        return null;
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFamilyAndAllergiesStep() {
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SectionHeader(icon: Icons.family_restroom_outlined, title: "Family Health History"),
-            const SizedBox(height: 16),
-            _buildExpandableField( // Main Yes/No for Family History
-              question: "Is there any significant health history in your immediate family?",
-              hasContent: _hasFamilyHistory,
-              onChanged: (value) => setState(() {
-                _hasFamilyHistory = value;
-                if (!value) {
-                  _familyHealthHistorySelected.updateAll((key, val) => false);
-                  _hasOtherFamilyHistory = false;
-                  _familyHealthHistoryOtherController.clear();
-                }
-              }),
-              showDivider: false,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 8),
-                  Text("Please select from common family conditions:", style: Theme.of(context).textTheme.titleSmall),
-                  ..._buildCheckboxList(
-                    options: _familyHealthHistorySelected,
-                    onChanged: (key, value) {
-                      setState(() { _familyHealthHistorySelected[key] = value!; });
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  _buildExpandableField( // Nested Yes/No for "Other Family History"
-                    question: "Any other family health history to specify?",
-                    hasContent: _hasOtherFamilyHistory,
-                    onChanged: (value) => setState(() => _hasOtherFamilyHistory = value),
-                    child: TextFormField(
-                      controller: _familyHealthHistoryOtherController,
-                      decoration: _inputDecoration(
-                        labelText: 'Other family history details',
-                        hintText: 'e.g., Mother with Type 2 Diabetes, Sibling with asthma.',
-                      ),
-                      maxLines: 3,
-                      validator: (value) {
-                        if (_hasOtherFamilyHistory && (value == null || value.isEmpty)) {
-                          return 'Please provide details or select "No".';
-                        }
-                        return null;
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24), // Space between sections
-            const SectionHeader(icon: Icons.warning_amber_rounded, title: "Known Allergies"),
-            const SizedBox(height: 16),
-            _buildExpandableField( // Main Yes/No for Allergies
-              question: "Do you have any known allergies?",
-              hasContent: _hasAllergies,
-              onChanged: (value) => setState(() {
-                _hasAllergies = value;
-                if (!value) {
-                  _knownAllergiesSelected.updateAll((key, val) => false);
-                  _hasOtherAllergies = false;
-                  _knownAllergiesOtherController.clear();
-                }
-              }),
-              showDivider: false,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 8),
-                  Text("Please select from common allergies:", style: Theme.of(context).textTheme.titleSmall),
-                  ..._buildCheckboxList(
-                    options: _knownAllergiesSelected,
-                    onChanged: (key, value) {
-                      setState(() { _knownAllergiesSelected[key] = value!; });
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  _buildExpandableField( // Nested Yes/No for "Other Allergies"
-                    question: "Any other allergies to specify?",
-                    hasContent: _hasOtherAllergies,
-                    onChanged: (value) => setState(() => _hasOtherAllergies = value),
-                    child: TextFormField(
-                      controller: _knownAllergiesOtherController,
-                      decoration: _inputDecoration(
-                        labelText: 'Other allergies/details',
-                        hintText: 'e.g., Penicillin allergy, Dust mites.',
-                      ),
-                      maxLines: 3,
-                      validator: (value) {
-                        if (_hasOtherAllergies && (value == null || value.isEmpty)) {
-                          return 'Please provide details or select "No".';
-                        }
-                        return null;
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMedicalHistoryStep() {
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SectionHeader(icon: Icons.history_edu_outlined, title: "Surgical & Medication History"),
-            const SizedBox(height: 16),
-            _buildExpandableField(
-              question: "Have you had any surgeries?",
-              hasContent: _hasSurgicalHistory,
-              onChanged: (value) => setState(() => _hasSurgicalHistory = value),
-              child: TextFormField(
-                controller: _surgicalHistoryDetailsController,
-                decoration: _inputDecoration(
-                  labelText: 'Details of surgeries (name and approximate year)',
-                  hintText: 'e.g., Appendectomy in 2003, Cardiac stenting in 2019.',
-                ),
-                maxLines: 3,
-                validator: (value) {
-                  if (_hasSurgicalHistory && (value == null || value.isEmpty)) {
-                    return 'Please provide surgery details or select "No".';
-                  }
-                  return null;
-                },
-              ),
-            ),
-            const SizedBox(height: 20),
-            _buildExpandableField(
-              question: "Are you currently taking any medications (including supplements, OTC)?",
-              hasContent: _takingCurrentMedications,
-              onChanged: (value) => setState(() => _takingCurrentMedications = value),
-              child: TextFormField(
-                controller: _currentMedicationsController,
-                decoration: _inputDecoration(
-                  labelText: 'List current medications and dosage',
-                  hintText: 'e.g., Metformin 500mg twice daily, Vitamin D 1000IU daily.',
-                ),
-                maxLines: 3,
-                validator: (value) {
-                  if (_takingCurrentMedications && (value == null || value.isEmpty)) {
-                    return 'Please list medications or select "No".';
-                  }
-                  return null;
-                },
-              ),
-            ),
-            const SizedBox(height: 20),
-            _buildExpandableField(
-              question: "Have you taken any significant medications in the last 6 months?",
-              hasContent: _hasMedicationHistory,
-              onChanged: (value) => setState(() => _hasMedicationHistory = value),
-              child: TextFormField(
-                controller: _medicationHistoryController,
-                decoration: _inputDecoration(
-                  labelText: 'List medications taken in last 6 months',
-                  hintText: 'e.g., Amoxicillin for 7 days (Feb), Ibuprofen as needed.',
-                ),
-                maxLines: 3,
-                validator: (value) {
-                  if (_hasMedicationHistory && (value == null || value.isEmpty)) {
-                    return 'Please list medications or select "No".';
-                  }
-                  return null;
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHabitsStep() {
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SectionHeader(icon: Icons.smoking_rooms_outlined, title: "Smoking & Alcohol"),
-            const SizedBox(height: 16),
-            _buildDropdownFormField(
-              label: 'Daily smoking intensity',
-              value: _selectedSmokingIntensity,
-              items: _smokingOptions,
-              onChanged: (value) => setState(() => _selectedSmokingIntensity = value),
-              validator: (value) => value == null ? 'This field is required.' : null,
-            ),
-            const SizedBox(height: 20),
-            _buildDropdownFormField(
-              label: 'Weekly alcohol intake',
-              value: _selectedAlcoholIntake,
-              items: _alcoholOptions,
-              onChanged: (value) => setState(() => _selectedAlcoholIntake = value),
-              validator: (value) => value == null ? 'This field is required.' : null,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActivityAndDietStep() {
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SectionHeader(icon: Icons.restaurant_menu_outlined, title: "Dietary Habits"),
-            const SizedBox(height: 16),
-            _buildDropdownFormField(
-              label: 'General dietary habits',
-              value: _selectedDietaryHabitGeneral,
-              items: _dietaryHabitOptions,
-              onChanged: (value) => setState(() => _selectedDietaryHabitGeneral = value),
-              validator: (value) => value == null ? 'This field is required.' : null,
-            ),
-            if (_selectedDietaryHabitGeneral == 'Specific diet plan') ...[
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _dietaryHabitsSpecificPlanController,
-                decoration: _inputDecoration(
-                    labelText: 'Details of your specific diet plan',
-                    hintText: 'e.g., Keto, High-protein, Vegan, Low-sodium.'),
-                validator: (value) {
-                  if (_selectedDietaryHabitGeneral == 'Specific diet plan' && (value == null || value.isEmpty)) {
-                    return 'Please specify your diet plan details.';
-                  }
-                  return null;
-                },
-              ),
-            ],
-            const SizedBox(height: 24),
-            const SectionHeader(icon: Icons.fitness_center_outlined, title: "Physical Activity"),
-            const SizedBox(height: 16),
-            _buildDropdownFormField(
-              label: 'Weekly physical activity level',
-              value: _selectedPhysicalActivityLevel,
-              items: _physicalActivityOptions,
-              onChanged: (value) => setState(() => _selectedPhysicalActivityLevel = value),
-              itemHeight: 70,
-              isExpanded: true, // Allow dropdown to expand for long text
-              validator: (value) => value == null ? 'This field is required.' : null,
-            ),
-            // TextFormField for physical activity description has been removed as per your request.
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSleepAndStressStep() {
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SectionHeader(icon: Icons.bedtime_outlined, title: "Sleep Pattern"),
-            const SizedBox(height: 16),
-            _buildDropdownFormField(
-              label: 'Average daily sleep pattern',
-              value: _selectedSleepPattern,
-              items: _sleepPatternOptions,
-              onChanged: (value) => setState(() => _selectedSleepPattern = value),
-              validator: (value) => value == null ? 'This field is required.' : null,
-            ),
-            const SizedBox(height: 24),
-            const SectionHeader(icon: Icons.sentiment_very_dissatisfied_outlined, title: "Stress Level"),
-            const SizedBox(height: 16),
-            _buildDropdownFormField(
-              label: 'General stress level',
-              value: _selectedStressLevel,
-              items: _stressLevelOptions,
-              onChanged: (value) => setState(() => _selectedStressLevel = value),
-              validator: (value) => value == null ? 'This field is required.' : null,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // --- Helper Widgets (from your provided code, slightly restyled) ---
-  List<Widget> _buildCheckboxList({
-    required Map<String, bool> options,
-    required Function(String, bool?) onChanged,
-  }) {
-    return options.keys.map((key) {
-      return Card(
-        elevation: 0.5,
-        margin: const EdgeInsets.only(bottom: 6),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: options[key]! ? AppColors.primary.withOpacity(0.7) : AppColors.gray.withOpacity(0.3), width: 0.8),
-        ),
-        child: CheckboxListTile(
-          title: Text(key, style: TextStyle(color: AppColors.dark.withOpacity(0.9))),
-          value: options[key],
-          onChanged: (value) => onChanged(key, value),
-          controlAffinity: ListTileControlAffinity.leading,
-          activeColor: AppColors.primary,
-          checkColor: Colors.white,
-          dense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-        ),
-      );
-    }).toList();
-  }
-
+  // --- UI Helper Widgets ---
   Widget _buildYesNoToggle({
-    required bool currentValue,
-    required Function(bool) onChanged,
-  }) {
-    return Row(
-      children: [
-        Expanded(
-          child: MaterialButton(
-            onPressed: () => onChanged(true),
-            color: currentValue ? AppColors.primary : AppColors.light,
-            textColor: currentValue ? Colors.white : AppColors.dark,
-            elevation: currentValue ? 2 : 0.5,
-            shape: RoundedRectangleBorder(
-                borderRadius: const BorderRadius.only(topLeft: Radius.circular(8), bottomLeft: Radius.circular(8)),
-                side: BorderSide(color: currentValue ? AppColors.primary : AppColors.gray.withOpacity(0.5))
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: const Text('YES'),
-          ),
-        ),
-        Expanded(
-          child: MaterialButton(
-            onPressed: () => onChanged(false),
-            color: !currentValue ? AppColors.primary : AppColors.light,
-            textColor: !currentValue ? Colors.white : AppColors.dark,
-            elevation: !currentValue ? 2 : 0.5,
-            shape: RoundedRectangleBorder(
-                borderRadius: const BorderRadius.only(topRight: Radius.circular(8), bottomRight: Radius.circular(8)),
-                side: BorderSide(color: !currentValue ? AppColors.primary : AppColors.gray.withOpacity(0.5))
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: const Text('NO'),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildExpandableField({
     required String question,
-    required bool hasContent, // This is the Yes/No state
-    required Function(bool) onChanged, // To change the Yes/No state
-    required Widget child, // The TextFormField or other widget to show if Yes
-    bool showDivider = true,
+    required bool currentValue,
+    required ValueChanged<bool> onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(question, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
-        _buildYesNoToggle(
-          currentValue: hasContent,
-          onChanged: onChanged,
+        Row(
+          children: [
+            Expanded(
+              child: _ToggleButton(
+                text: 'YES',
+                isSelected: currentValue,
+                onTap: () => onChanged(true),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _ToggleButton(
+                text: 'NO',
+                isSelected: !currentValue,
+                onTap: () => onChanged(false),
+              ),
+            ),
+          ],
         ),
-        if (hasContent) ...[
-          const SizedBox(height: 12),
-          // if (showDivider) const Divider(thickness: 0.8),
-          // if (showDivider) const SizedBox(height: 12),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-            child: child,
-          ),
-        ],
-        if (showDivider) const SizedBox(height: 16),
-        if (showDivider) const Divider(thickness: 0.7),
-        if (showDivider) const SizedBox(height: 16),
       ],
     );
   }
 
-
-  Widget _buildDropdownFormField({
-    required String label,
-    required String? value,
-    required List<String> items,
-    required ValueChanged<String?> onChanged,
-    String? Function(String?)? validator,
-    double? itemHeight, // e.g., 70 or 80 for multi-line items
-    bool isExpanded = false, // Default to false, set true for long item texts
+  Widget _buildCheckboxGroup({
+    required String title,
+    required Map<String, bool> options,
+    required Function(String, bool) onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500)),
+        Text(title, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          decoration: _inputDecoration(), // Using the shared input decoration
-          value: value,
-          items: items.map((String item) {
-            return DropdownMenuItem<String>(
-              value: item,
-              // Wrap the Text widget with Expanded or Flexible if it's inside a Row,
-              // or ensure the DropdownButtonFormField itself has enough width.
-              // For long items in the dropdown list itself:
-              child: Text(
-                item,
-                overflow: TextOverflow.ellipsis, // Handles overflow for the displayed selected item
-                maxLines: isExpanded ? 3 : 1, // Allow more lines if the item text is long and isExpanded is true
-                softWrap: isExpanded,
+        Wrap(
+          spacing: 8.0,
+          runSpacing: 4.0,
+          children: options.keys.map((key) {
+            return FilterChip(
+              label: Text(key, style: TextStyle(color: options[key]! ? AppColors.white : AppColors.primary)),
+              selected: options[key]!,
+              onSelected: (selected) => onChanged(key, selected),
+              backgroundColor: AppColors.light,
+              selectedColor: AppColors.primary,
+              checkmarkColor: AppColors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(color: options[key]! ? AppColors.primary : AppColors.gray.withOpacity(0.7)),
               ),
             );
           }).toList(),
-          onChanged: onChanged,
-          validator: validator,
-          isExpanded: isExpanded, // This makes the dropdown button expand to fill available horizontal space.
-          // For the items in the dropdown list, their width is constrained by the dropdown menu's width.
-          icon: const Icon(Icons.arrow_drop_down_circle_outlined, color: AppColors.primary),
-          itemHeight: itemHeight, // Use null for default, or specify e.g. kMinInteractiveDimension * 1.5 for taller items
-          dropdownColor: Colors.white,
-          style: TextStyle(color: AppColors.dark, fontSize: 15, overflow: TextOverflow.ellipsis),
         ),
       ],
     );
   }
 
-  InputDecoration _inputDecoration({String labelText = '', String hintText = ''}) {
-    return InputDecoration(
-      labelText: labelText.isNotEmpty ? labelText : null,
-      hintText: hintText,
-      labelStyle: TextStyle(color: AppColors.dark.withOpacity(0.8), fontSize: 15),
-      hintStyle: TextStyle(color: AppColors.gray, fontSize: 14),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10.0),
-        borderSide: BorderSide(color: AppColors.gray.withOpacity(0.4)),
+  Widget _buildDropdownFormField<T>({
+    required String label,
+    required IconData icon,
+    required T? value,
+    required List<T> items,
+    required ValueChanged<T?> onChanged,
+    String? Function(T?)? validator,
+    String? hintText,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: DropdownButtonFormField<T>(
+        value: value,
+        items: items.map((item) => DropdownMenuItem<T>(value: item, child: Text(item.toString()))).toList(),
+        onChanged: onChanged,
+        validator: validator,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hintText ?? 'Select an option',
+          prefixIcon: Icon(icon, color: AppColors.secondary),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          filled: true,
+          fillColor: AppColors.white,
+          labelStyle: TextStyle(color: AppColors.dark.withOpacity(0.9)),
+        ),
+        isExpanded: true,
+        style: const TextStyle(color: AppColors.dark, fontSize: 16),
+        icon: const Icon(Icons.arrow_drop_down_rounded, color: AppColors.primary),
       ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10.0),
-        borderSide: BorderSide(color: AppColors.gray.withOpacity(0.6)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10.0),
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.8),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10.0),
-        borderSide: const BorderSide(color: AppColors.error, width: 1.2),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10.0),
-        borderSide: const BorderSide(color: AppColors.error, width: 1.8),
-      ),
-      filled: true,
-      fillColor: AppColors.white, // Or AppColors.light.withOpacity(0.7)
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
     );
   }
 
+  // --- Step Content Builders ---
+  List<Step> getSteps(BuildContext context) => [
+    _buildStep(title: 'Basic Information', content: _buildBasicInfoStep(context), stepIndex: 0),
+    _buildStep(title: 'Medical Conditions', content: _buildMedicalConditionsStep(context), stepIndex: 1),
+    _buildStep(title: 'Family & Allergies', content: _buildFamilyAllergiesStep(context), stepIndex: 2),
+    _buildStep(title: 'Medical History', content: _buildMedicalHistoryStep(context), stepIndex: 3),
+    _buildStep(title: 'Lifestyle Habits', content: _buildLifestyleHabitsStep(context), stepIndex: 4),
+    _buildStep(title: 'Activity & Sleep', content: _buildActivitySleepStep(context), stepIndex: 5),
+    _buildStep(title: 'Well-being', content: _buildWellBeingStep(context), stepIndex: 6),
+  ];
+
+  Step _buildStep({required String title, required Widget content, required int stepIndex}) {
+    return Step(
+      title: Text(title, style: TextStyle(fontWeight: _currentStep == stepIndex ? FontWeight.bold : FontWeight.normal, color: _currentStep == stepIndex ? AppColors.primary : AppColors.dark)),
+      content: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8.0),
+        child: content,
+      ),
+      isActive: _currentStep >= stepIndex,
+      state: _currentStep > stepIndex ? StepState.complete : (_currentStep == stepIndex ? StepState.editing : StepState.indexed),
+    );
+  }
+
+  Widget _buildBasicInfoStep(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(title: "Let's start with some basics", icon: Icons.person_outline_rounded),
+        CustomTextField(controller: _ageController, labelText: "Your Age *", prefixIcon: Icons.cake_outlined, keyboardType: TextInputType.number, validator: (val) => (val == null || val.isEmpty || int.tryParse(val) == null || int.parse(val) <= 0 || int.parse(val) > 120) ? 'Valid age required' : null),
+        const SizedBox(height: 16),
+        _buildDropdownFormField<String>(
+          label: 'Gender *',
+          icon: Icons.wc_rounded,
+          value: _selectedGender,
+          items: _genderOptions,
+          onChanged: (val) => setState(() => _selectedGender = val),
+          validator: (val) => val == null ? 'Please select your gender' : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMedicalConditionsStep(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(title: "Chronic Health Conditions", icon: Icons.monitor_heart_outlined),
+        _buildYesNoToggle(question: "Do you have any ongoing or significant past chronic health conditions? *", currentValue: _hasChronicConditions, onChanged: (val) => setState(() => _hasChronicConditions = val)),
+        if (_hasChronicConditions) ...[
+          const SizedBox(height: 16),
+          _buildCheckboxGroup(title: "Please select any conditions you have/had:", options: _chronicConditionsSelected, onChanged: (key, selected) => setState(() => _chronicConditionsSelected[key] = selected)),
+          const SizedBox(height: 16),
+          CustomTextField(controller: _chronicConditionsOtherController, labelText: "Other conditions or details", prefixIcon: Icons.playlist_add_outlined, maxLines: 3, validator: (val) => (_hasChronicConditions && _chronicConditionsSelected.entries.where((e) => e.value).isEmpty && (val == null || val.isEmpty)) ? 'Please specify or select a condition' : null),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildFamilyAllergiesStep(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(title: "Family Health History", icon: Icons.family_restroom_rounded),
+        _buildYesNoToggle(question: "Any significant health conditions in your immediate family (parents, siblings)? *", currentValue: _hasFamilyHistory, onChanged: (val) => setState(() => _hasFamilyHistory = val)),
+        if (_hasFamilyHistory) ...[
+          const SizedBox(height: 16),
+          _buildCheckboxGroup(title: "Select any relevant family conditions:", options: _familyHealthHistorySelected, onChanged: (key, selected) => setState(() => _familyHealthHistorySelected[key] = selected)),
+          const SizedBox(height: 16),
+          CustomTextField(controller: _familyHealthHistoryOtherController, labelText: "Other family conditions or details", prefixIcon: Icons.playlist_add_outlined, maxLines: 3),
+        ],
+        const SizedBox(height: 24),
+        _SectionHeader(title: "Allergies", icon: Icons.sick),
+        _buildYesNoToggle(question: "Do you have any known allergies (medications, food, environmental)? *", currentValue: _hasAllergies, onChanged: (val) => setState(() => _hasAllergies = val)),
+        if (_hasAllergies) ...[
+          const SizedBox(height: 16),
+          CustomTextField(controller: _allergiesDetailsController, labelText: "Please list your allergies and reactions *", prefixIcon: Icons.warning_amber_rounded, maxLines: 3, validator: (val) => (_hasAllergies && (val == null || val.isEmpty)) ? 'Please specify your allergies' : null),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildMedicalHistoryStep(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(title: "Surgeries & Medications", icon: Icons.medical_information_outlined),
+        _buildYesNoToggle(question: "Have you had any surgeries in the past? *", currentValue: _hasSurgicalHistory, onChanged: (val) => setState(() => _hasSurgicalHistory = val)),
+        if (_hasSurgicalHistory) ...[
+          const SizedBox(height: 16),
+          CustomTextField(controller: _surgicalHistoryDetailsController, labelText: "Please list surgeries and approximate year(s) *", prefixIcon: Icons.healing_outlined, maxLines: 3, validator: (val) => (_hasSurgicalHistory && (val == null || val.isEmpty)) ? 'Please provide surgery details' : null),
+        ],
+        const SizedBox(height: 24),
+        _buildYesNoToggle(question: "Are you currently taking any medications (prescription, OTC, supplements)? *", currentValue: _takingCurrentMedications, onChanged: (val) => setState(() => _takingCurrentMedications = val)),
+        if (_takingCurrentMedications) ...[
+          const SizedBox(height: 16),
+          CustomTextField(controller: _currentMedicationsDetailsController, labelText: "List current medications, dosage, and frequency *", prefixIcon: Icons.medication_liquid_outlined, maxLines: 4, validator: (val) => (_takingCurrentMedications && (val == null || val.isEmpty)) ? 'Please list your medications' : null),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildLifestyleHabitsStep(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(title: "Smoking & Alcohol", icon: Icons.smoking_rooms_rounded),
+        _buildDropdownFormField<String>(label: 'Smoking Status *', icon: Icons.smoking_rooms, value: _selectedSmokingStatus, items: _smokingStatusOptions, onChanged: (val) => setState(() => _selectedSmokingStatus = val), validator: (val) => val == null ? 'Required' : null),
+        if (_selectedSmokingStatus == 'Former smoker' || _selectedSmokingStatus?.startsWith('Current smoker') == true)
+          CustomTextField(controller: _smokingDetailsController, labelText: "Details (e.g., how much/long, quit date)", prefixIcon: Icons.edit_note_outlined, maxLines: 2),
+
+        const SizedBox(height: 16),
+        _buildDropdownFormField<String>(label: 'Alcohol Consumption *', icon: Icons.no_drinks_rounded, value: _selectedAlcoholConsumption, items: _alcoholConsumptionOptions, onChanged: (val) => setState(() => _selectedAlcoholConsumption = val), validator: (val) => val == null ? 'Required' : null),
+        if (_selectedAlcoholConsumption == 'Moderately (Weekly)' || _selectedAlcoholConsumption == 'Frequently (Daily/Almost Daily)')
+          CustomTextField(controller: _alcoholDetailsController, labelText: "Details (e.g., type, quantity per week)", prefixIcon: Icons.edit_note_outlined, maxLines: 2),
+
+
+        const SizedBox(height: 24),
+        _SectionHeader(title: "Dietary Habits", icon: Icons.restaurant_menu_rounded),
+        _buildDropdownFormField<String>(label: 'Primary Dietary Pattern *', icon: Icons.fastfood_outlined, value: _selectedDietaryHabits, items: _dietaryHabitOptions, onChanged: (val) => setState(() => _selectedDietaryHabits = val), validator: (val) => val == null ? 'Required' : null),
+        if (_selectedDietaryHabits == 'Other specific diet')
+          CustomTextField(controller: _dietaryHabitsOtherController, labelText: "Specify your diet *", prefixIcon: Icons.edit_note_outlined, validator: (val) => (_selectedDietaryHabits == 'Other specific diet' && (val == null || val.isEmpty)) ? 'Please specify' : null),
+      ],
+    );
+  }
+
+  Widget _buildActivitySleepStep(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(title: "Physical Activity", icon: Icons.fitness_center_rounded),
+        _buildDropdownFormField<String>(label: 'Typical Physical Activity Level *', icon: Icons.directions_run_rounded, value: _selectedPhysicalActivityLevel, items: _physicalActivityOptions, onChanged: (val) => setState(() => _selectedPhysicalActivityLevel = val), validator: (val) => val == null ? 'Required' : null),
+
+        const SizedBox(height: 24),
+        _SectionHeader(title: "Sleep Patterns", icon: Icons.bedtime_rounded),
+        _buildDropdownFormField<String>(label: 'Average Sleep Duration per Night *', icon: Icons.timer_outlined, value: _selectedSleepDuration, items: _sleepDurationOptions, onChanged: (val) => setState(() => _selectedSleepDuration = val), validator: (val) => val == null ? 'Required' : null),
+        const SizedBox(height: 16),
+        _buildDropdownFormField<String>(label: 'General Sleep Quality *', icon: Icons.star_outline_rounded, value: _selectedSleepQuality, items: _sleepQualityOptions, onChanged: (val) => setState(() => _selectedSleepQuality = val), validator: (val) => val == null ? 'Required' : null),
+      ],
+    );
+  }
+
+  Widget _buildWellBeingStep(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(title: "Stress & Well-being", icon: Icons.spa_outlined),
+        _buildDropdownFormField<String>(label: 'General Stress Level *', icon: Icons.sentiment_very_dissatisfied_rounded, value: _selectedStressLevel, items: _stressLevelOptions, onChanged: (val) => setState(() => _selectedStressLevel = val), validator: (val) => val == null ? 'Required' : null),
+        const SizedBox(height: 16),
+        CustomTextField(controller: _stressCopingMechanismsController, labelText: "How do you usually cope with stress?", prefixIcon: Icons.psychology_outlined, maxLines: 3),
+      ],
+    );
+  }
+
+  Future<void> _handlePopAttempt() async {
+    bool? shouldPop = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Exit Questionnaire?'),
+        content: const Text('Your progress will not be saved. Are you sure you want to exit?'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false), // User chose not to pop
+            child: const Text('Cancel', style: TextStyle(color: AppColors.gray)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),  // User confirmed to pop
+            child: const Text('Exit', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldPop == true && mounted) {
+      // Navigate to LoginScreen or another appropriate screen, clearing the stack
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+            (Route<dynamic> route) => false,
+      );
+    }
+  }
+
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Health Questionnaire', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold)),
-        backgroundColor: AppColors.primary,
-        elevation: 3,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.white),
-          onPressed: () => Navigator.of(context).pop(),
+    return PopScope(
+      canPop: false, // Prevent immediate pop, handle it in onPopInvokedWithResult
+      onPopInvokedWithResult: (bool didPop, dynamic result) async {
+        // This is called after an attempt to pop the screen.
+        // The 'result' parameter contains the value the route would have returned if popped.
+        // If didPop is true, it means the pop happened (e.g. if canPop was true, or Navigator.pop was called).
+        // If didPop is false, it means canPop was false, and the pop was blocked by the PopScope.
+        if (didPop) {
+          return; // Pop already happened (e.g. if we called Navigator.pop elsewhere), nothing more to do.
+        }
+        // If pop was blocked (canPop: false), then show our confirmation dialog.
+        await _handlePopAttempt();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            'Your Health Profile',
+            style: TextStyle(
+              color: AppColors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          backgroundColor: AppColors.primary,
+          elevation: 2,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.white),
+            onPressed: () {
+              // Manually trigger the same logic as system back press
+              _handlePopAttempt();
+            },
+          ),
         ),
-      ),
-      body: _isSubmitting
-          ? Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(AppColors.secondary)),
-            const SizedBox(height: 20),
-            Text('Saving your responses...', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.dark)),
-          ],
-        ),
-      )
-          : Container(
-        // decoration: BoxDecoration( // Optional: Add a subtle background
-        //   gradient: LinearGradient(
-        //     begin: Alignment.topLeft,
-        //     end: Alignment.bottomRight,
-        //     colors: [AppColors.light.withOpacity(0.3), AppColors.white, AppColors.light.withOpacity(0.3)],
-        //   ),
-        // ),
-        child: Form(
+        body: _isSubmitting
+            ? const Center(
+          child: LoadingIndicator(
+            color: AppColors.secondary,
+            size: 50,
+          ),
+        )
+            : Form(
           key: _formKey,
           child: Stepper(
             physics: const ClampingScrollPhysics(),
@@ -901,41 +618,39 @@ class _PatientHealthQuestionnaireState
             currentStep: _currentStep,
             onStepContinue: _nextStep,
             onStepCancel: _prevStep,
-            steps: getSteps(),
+            steps: getSteps(context),
             controlsBuilder: (context, ControlsDetails controls) {
-              final isLastStep = _currentStep == getSteps().length - 1;
-              final isFirstStep = _currentStep == 0;
-
+              final isLastStep = _currentStep == getSteps(context).length - 1;
               return Padding(
-                padding: const EdgeInsets.only(top: 24.0, bottom: 16.0, left: 8.0, right: 8.0),
+                padding: const EdgeInsets.only(top: 24.0, bottom: 8.0),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    if (!isFirstStep)
+                  children: <Widget>[
+                    if (_currentStep > 0)
                       OutlinedButton.icon(
                         onPressed: controls.onStepCancel,
-                        icon: const Icon(Icons.arrow_back_ios_new, size: 16),
+                        icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 16),
                         label: const Text('BACK'),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.primary,
-                          side: const BorderSide(color: AppColors.primary),
+                          foregroundColor: AppColors.secondary,
+                          side: const BorderSide(color: AppColors.secondary),
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
-                      )
-                    else
-                      const SizedBox(width: 80), // Placeholder for alignment
-
+                      ),
+                    const Spacer(),
                     ElevatedButton.icon(
                       onPressed: controls.onStepContinue,
-                      icon: Icon(isLastStep ? Icons.check_circle_outline : Icons.arrow_forward_ios, size: 18),
-                      label: Text(isLastStep ? 'SUBMIT ANSWERS' : 'NEXT STEP'),
+                      icon: Icon(
+                        isLastStep ? Icons.check_circle_outline_rounded : Icons.arrow_forward_ios_rounded,
+                        size: 20,
+                      ),
+                      label: Text(isLastStep ? 'SUBMIT PROFILE' : 'NEXT STEP'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
-                        elevation: 2,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ],
@@ -947,46 +662,69 @@ class _PatientHealthQuestionnaireState
       ),
     );
   }
+
 }
 
-// Section Header Component (as you defined it, slightly styled)
-class SectionHeader extends StatelessWidget {
-  final IconData icon;
+// Reusable Section Header for Stepper content
+class _SectionHeader extends StatelessWidget {
   final String title;
+  final IconData icon;
 
-  const SectionHeader({
-    super.key,
-    required this.icon,
-    required this.title,
-  });
+  const _SectionHeader({required this.title, required this.icon});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 0.0), // Reduced bottom padding
+      padding: const EdgeInsets.only(bottom: 16.0, top: 8.0),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: AppColors.primary, size: 22),
-          ),
+          Icon(icon, color: AppColors.primary, size: 22),
           const SizedBox(width: 10),
-          Expanded( // Allow title to wrap if too long
+          Expanded(
             child: Text(
               title,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                // fontSize: 19,
-                fontWeight: FontWeight.w600,
-                color: AppColors.primary,
-              ),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w600),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// Reusable Toggle Button for Yes/No
+class _ToggleButton extends StatelessWidget {
+  final String text;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _ToggleButton({required this.text, required this.isSelected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: isSelected ? AppColors.primary : AppColors.light,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: isSelected ? AppColors.primary : AppColors.gray.withOpacity(0.7)),
+          ),
+          child: Center(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: isSelected ? AppColors.white : AppColors.primary,
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

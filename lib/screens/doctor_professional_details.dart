@@ -1,4 +1,5 @@
-// ignore_for_file: library_private_types_in_public_api, deprecated_member_use, use_build_context_synchronously
+// lib/screens/doctor_professional_details.dart
+// ignore_for_file: library_private_types_in_public_api, use_build_context_synchronously
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -8,6 +9,10 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
 import 'package:p1/theme.dart';
 import 'package:p1/screens/doctor_dashboard_screen.dart';
+import 'package:p1/widgets/custom_textfield.dart'; // Assuming this is your custom widget
+import 'package:p1/widgets/loading_indicator.dart'; // Assuming this is your custom widget
+import 'package:intl/intl.dart'; // For formatting time
+import 'package:p1/screens/login_screen.dart';
 
 class DoctorProfessionalDetails extends StatefulWidget {
   const DoctorProfessionalDetails({super.key});
@@ -19,12 +24,15 @@ class DoctorProfessionalDetails extends StatefulWidget {
 
 class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
   final _formKey = GlobalKey<FormState>();
-  final _scrollController = ScrollController();
-  File? _profileImage;
-  String _selectedSpecialty = ''; // For Dropdown
-  final List<String> _selectedLanguages = []; // For FilterChips
+  final ScrollController _scrollController = ScrollController();
 
-  // TextEditingControllers for TextFormFields
+  // --- State Variables ---
+  File? _profileImageFile;
+  String? _existingProfileImageUrl;
+  bool _isLoadingData = true;
+  bool _isSubmitting = false;
+
+  // --- Form Controllers ---
   final TextEditingController _qualificationsController = TextEditingController();
   final TextEditingController _yearsOfExperienceController = TextEditingController();
   final TextEditingController _licenseNumberController = TextEditingController();
@@ -32,25 +40,28 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
   final TextEditingController _consultationFeeController = TextEditingController();
   final TextEditingController _aboutController = TextEditingController();
 
-  // Availability: UI uses TimeOfDay, Firestore uses String "HH:mm"
-  final Map<String, List<Map<String, TimeOfDay?>>> _availability = {
-    'Monday': [], 'Tuesday': [], 'Wednesday': [],
-    'Thursday': [], 'Friday': [], 'Saturday': [], 'Sunday': []
-  };
+  Map<String, dynamic> _profileData = {}; // To store existing profile data from Firestore
 
-  bool _isSubmitting = false;
-  bool _isLoadingData = true;
-  Map<String, dynamic> _profileData = {}; // To store existing profile data
-
+  // --- Dropdown & Chips Data ---
+  String? _selectedSpecialty; // Nullable for initial state
   final List<String> _specialtiesList = [
     'Cardiology', 'Dermatology', 'Endocrinology', 'Family Medicine',
-    'Gastroenterology', 'Neurology', 'Obstetrics', 'Pediatrics',
-    'Psychiatry', 'Orthopedics', 'Ophthalmology', 'Gynecology', 'Other'
+    'Gastroenterology', 'Neurology', 'Obstetrics & Gynecology', 'Pediatrics',
+    'Psychiatry', 'Orthopedics', 'Ophthalmology', 'Pulmonology', 'Urology', 'Other'
+  ];
+  final List<String> _selectedLanguages = [];
+  final List<String> _availableLanguagesList = [
+    'English', 'Spanish', 'French', 'German', 'Chinese (Mandarin)', 'Arabic', 'Hindi', 'Urdu', 'Portuguese', 'Russian', 'Japanese', 'Swahili'
   ];
 
-  final List<String> _availableLanguagesList = [
-    'English', 'Spanish', 'French', 'German', 'Chinese', 'Arabic', 'Hindi', 'Urdu', 'Portuguese', 'Russian'
-  ];
+  // --- Availability Data ---
+  // Storing TimeOfDay for UI, will convert to "HH:mm" string for Firestore
+  final Map<String, List<Map<String, TimeOfDay?>>> _availability = {
+    'Monday': [], 'Tuesday': [], 'Wednesday': [], 'Thursday': [],
+    'Friday': [], 'Saturday': [], 'Sunday': []
+  };
+  final List<String> _daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
 
   @override
   void initState() {
@@ -71,47 +82,45 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
   }
 
   Future<void> _loadDoctorDataForEditing() async {
-    setState(() {
-      _isLoadingData = true;
-    });
-
+    setState(() => _isLoadingData = true);
     final user = FirebaseAuth.instance.currentUser;
+
     if (user == null) {
-      setState(() { _isLoadingData = false; });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('User not authenticated.')),
-      );
+      if (mounted) {
+        setState(() => _isLoadingData = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('User not authenticated.'), backgroundColor: AppColors.error),
+        );
+      }
       return;
     }
 
     try {
-      DocumentSnapshot doctorDoc = await FirebaseFirestore.instance
-          .collection('doctors')
-          .doc(user.uid)
-          .get();
+      DocumentSnapshot doctorDoc = await FirebaseFirestore.instance.collection('doctors').doc(user.uid).get();
 
       if (mounted && doctorDoc.exists) {
-        _profileData = doctorDoc.data() as Map<String, dynamic>;
+        final data = doctorDoc.data() as Map<String, dynamic>;
 
-        _selectedSpecialty = _profileData['specialty'] ?? '';
-        _qualificationsController.text = _profileData['qualifications'] ?? '';
-        _yearsOfExperienceController.text = (_profileData['yearsOfExperience'] ?? 0).toString();
-        _licenseNumberController.text = _profileData['licenseNumber'] ?? '';
-        _affiliatedInstitutionsController.text = _profileData['affiliatedInstitutions'] ?? '';
-        _consultationFeeController.text = (_profileData['consultationFee'] ?? 0.0).toStringAsFixed(0); // Assuming fee is integer like
-        _aboutController.text = _profileData['about'] ?? '';
+        _profileData = data;
 
-        if (_profileData['languages'] is List) {
+        _existingProfileImageUrl = data['profileImageUrl'] as String?;
+        _selectedSpecialty = data['specialty'] as String?;
+        _qualificationsController.text = data['qualifications'] ?? '';
+        _yearsOfExperienceController.text = (data['yearsOfExperience'] ?? '').toString();
+        _licenseNumberController.text = data['licenseNumber'] ?? '';
+        _affiliatedInstitutionsController.text = data['affiliatedInstitutions'] ?? '';
+        _consultationFeeController.text = (data['consultationFee']?.toStringAsFixed(0) ?? '');
+        _aboutController.text = data['about'] ?? '';
+
+        if (data['languages'] is List) {
           _selectedLanguages.clear();
-          _selectedLanguages.addAll(List<String>.from(_profileData['languages']));
+          _selectedLanguages.addAll(List<String>.from(data['languages']));
         }
 
-        // Parse availability
+        // Parse availability from Firestore string format to TimeOfDay
         _availability.updateAll((key, value) => []); // Clear existing UI state
-
-        if (_profileData['availability'] != null && _profileData['availability'] is Map) {
-          final Map<String, dynamic> availabilityFromDb = Map<String, dynamic>.from(_profileData['availability']);
-
+        if (data['availability'] != null && data['availability'] is Map) {
+          final Map<String, dynamic> availabilityFromDb = Map<String, dynamic>.from(data['availability']);
           availabilityFromDb.forEach((dayKey, dayRangesDynamic) {
             if (_availability.containsKey(dayKey) && dayRangesDynamic is List) {
               List<Map<String, TimeOfDay?>> daySlots = [];
@@ -123,19 +132,13 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
 
                   if (startStr != null && startStr.isNotEmpty) {
                     final parts = startStr.split(':');
-                    if (parts.length == 2) {
-                      startTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
-                    }
+                    if (parts.length == 2) startTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
                   }
                   if (endStr != null && endStr.isNotEmpty) {
                     final parts = endStr.split(':');
-                    if (parts.length == 2) {
-                      endTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
-                    }
+                    if (parts.length == 2) endTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
                   }
-                  if (startTime != null && endTime != null) {
-                    daySlots.add({'start': startTime, 'end': endTime});
-                  }
+                  if (startTime != null && endTime != null) daySlots.add({'start': startTime, 'end': endTime});
                 }
               }
               _availability[dayKey] = daySlots;
@@ -143,48 +146,48 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
           });
         }
       } else {
-        _availability.updateAll((key, value) => []); // Ensure empty lists if no profile
+        _availability.updateAll((key, value) => []); // Ensure empty if no profile
       }
     } catch (e) {
       debugPrint("Error loading doctor data: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading profile data: ${e.toString()}')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading profile data: ${e.toString()}'), backgroundColor: AppColors.error),
+        );
+      }
       _availability.updateAll((key, value) => []);
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoadingData = false;
-        });
-      }
+      if (mounted) setState(() => _isLoadingData = false);
     }
   }
 
   Future<void> _pickImage() async {
     final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
-    if (image != null) {
-      if (mounted) {
-        setState(() => _profileImage = File(image.path));
+    try {
+      final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70, maxWidth: 1024, maxHeight: 1024);
+      if (image != null) {
+        if (mounted) setState(() => _profileImageFile = File(image.path));
       }
+    } catch (e) {
+      debugPrint("Error picking image: $e");
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error picking image: ${e.toString()}"), backgroundColor: AppColors.error));
     }
   }
 
-  Future<String?> _uploadImage() async {
-    if (_profileImage == null) return null;
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return null;
+  Future<String?> _uploadImage(String userId) async {
+    if (_profileImageFile == null) return _existingProfileImageUrl; // Return existing if no new file
 
-    final storageRef = FirebaseStorage.instance
-        .ref()
-        .child('doctor_profiles')
-        .child('${user.uid}_${DateTime.now().millisecondsSinceEpoch}.jpg');
+    final storageRef = FirebaseStorage.instance.ref().child('doctor_profiles').child('$userId.jpg'); // Consistent naming
     try {
-      await storageRef.putFile(_profileImage!);
+      // Delete existing image if overwriting, to save space (optional)
+      // try { await storageRef.delete(); } catch (e) { debugPrint("No existing image to delete or error: $e"); }
+
+      await storageRef.putFile(_profileImageFile!);
       return await storageRef.getDownloadURL();
     } catch (e) {
       debugPrint("Error uploading image: $e");
-      return null;
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error uploading image: ${e.toString()}"), backgroundColor: AppColors.error));
+      return _existingProfileImageUrl; // Fallback to existing on error
     }
   }
 
@@ -192,6 +195,14 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
     if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please correct the errors in the form.'), backgroundColor: AppColors.error),
+      );
+      // Scroll to the first error
+      _formKey.currentState!.validate(); // This will mark fields with errors
+      return;
+    }
+    if (_selectedSpecialty == null || _selectedSpecialty!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select your medical specialty.'), backgroundColor: AppColors.warning),
       );
       return;
     }
@@ -201,25 +212,25 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
       );
       return;
     }
-    // Optional: Add validation for at least one availability slot if desired
 
-    if (mounted) setState(() => _isSubmitting = true);
-    _formKey.currentState!.save();
+    setState(() => _isSubmitting = true);
 
     try {
       final user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw Exception('User not authenticated');
+      if (user == null) throw Exception('User not authenticated.');
 
+      // Fetch doctor's nickname from 'users' collection
       final userDocSnapshot = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       final String doctorNickname = userDocSnapshot.exists && userDocSnapshot.data()!.containsKey('nickname')
           ? userDocSnapshot.data()!['nickname'] as String
-          : 'Dr. Unknown';
+          : 'Dr. User'; // Fallback nickname
 
-      final String? uploadedProfileImageUrl = await _uploadImage();
+      final String? uploadedProfileImageUrl = await _uploadImage(user.uid);
 
-      Map<String, List<Map<String, String>>> availabilityStr = {};
+      // Convert availability TimeOfDay to "HH:mm" string for Firestore
+      Map<String, List<Map<String, String>>> availabilityForFirestore = {};
       _availability.forEach((day, ranges) {
-        availabilityStr[day] = ranges
+        availabilityForFirestore[day] = ranges
             .where((range) => range['start'] != null && range['end'] != null)
             .map((range) {
           final start = range['start']!;
@@ -232,38 +243,37 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
       });
 
       Map<String, dynamic> doctorDataToSave = {
+        'uid': user.uid, // Ensure UID is part of the doctor's document
+        'email': user.email, // Denormalize email for easier querying if needed
         'nickname': doctorNickname,
         'nickname_lowercase': doctorNickname.toLowerCase(),
+        'profileImageUrl': uploadedProfileImageUrl, // This will be null if no new image and no existing one, or URL
         'specialty': _selectedSpecialty,
-        'specialty_lowercase': _selectedSpecialty.toLowerCase(),
-        'qualifications': _qualificationsController.text,
-        'yearsOfExperience': int.tryParse(_yearsOfExperienceController.text) ?? 0,
-        'licenseNumber': _licenseNumberController.text,
-        'affiliatedInstitutions': _affiliatedInstitutionsController.text,
-        'consultationFee': double.tryParse(_consultationFeeController.text) ?? 0.0,
+        'specialty_lowercase': _selectedSpecialty?.toLowerCase(),
+        'qualifications': _qualificationsController.text.trim(),
+        'yearsOfExperience': int.tryParse(_yearsOfExperienceController.text.trim()) ?? 0,
+        'licenseNumber': _licenseNumberController.text.trim(),
+        'affiliatedInstitutions': _affiliatedInstitutionsController.text.trim(),
+        'consultationFee': double.tryParse(_consultationFeeController.text.trim()) ?? 0.0,
         'languages': _selectedLanguages,
-        'availability': availabilityStr,
-        'about': _aboutController.text,
+        'availability': availabilityForFirestore,
+        'about': _aboutController.text.trim(),
+        'status': _profileData['status'] ?? 'offline', // Preserve existing or default
+        'callStatus': _profileData['callStatus'] ?? 'unavailable', // Preserve existing or default
+        'rating': _profileData['rating'] ?? 0.0, // Preserve existing
+        'totalReviews': _profileData['totalReviews'] ?? 0, // Preserve existing
+        'patientsTreated': _profileData['patientsTreated'] ?? 0, // Preserve existing
+        'createdAt': _profileData['createdAt'] ?? FieldValue.serverTimestamp(), // Preserve if exists, else new
         'updatedAt': FieldValue.serverTimestamp(),
-        'rating': _profileData['rating'] ?? 0.0,
-        'totalReviews': _profileData['totalReviews'] ?? 0,
-        'status': _profileData['status'] ?? 'active',
-        'callStatus': _profileData['callStatus'] ?? 'available',
-        'patientsTreated': _profileData['patientsTreated'] ?? 0,
       };
 
-      if (uploadedProfileImageUrl != null) {
-        doctorDataToSave['profileImageUrl'] = uploadedProfileImageUrl;
-      } else if (_profileData.containsKey('profileImageUrl') && _profileData['profileImageUrl'] != null) {
-        doctorDataToSave['profileImageUrl'] = _profileData['profileImageUrl'];
-      } else {
-        doctorDataToSave['profileImageUrl'] = null;
-      }
+      await FirebaseFirestore.instance.collection('doctors').doc(user.uid).set(doctorDataToSave, SetOptions(merge: true));
 
-      await FirebaseFirestore.instance
-          .collection('doctors')
-          .doc(user.uid)
-          .set(doctorDataToSave, SetOptions(merge: true));
+      // Update the users collection to mark profile as complete
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+        'isProfileSetupComplete': true,
+        'profileImageUrl': uploadedProfileImageUrl, // Also update image URL in users doc for consistency
+      });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -286,52 +296,44 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
     }
   }
 
+  // --- UI Builder Methods ---
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Professional Details', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: AppColors.white, fontWeight: FontWeight.bold)),
-        backgroundColor: AppColors.primary,
-        elevation: 2,
-        centerTitle: true,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppColors.white),
-          onPressed: () => Navigator.of(context).pop(),
+    return PopScope(
+      canPop: false, // Prevent immediate pop
+      onPopInvokedWithResult: (bool didPop, dynamic result) async {
+        if (didPop) {
+          return;
+        }
+        await _handlePopAttempt();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('Your Professional Profile', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: AppColors.white, fontWeight: FontWeight.bold)),
+          backgroundColor: AppColors.primary,
+          elevation: 2,
+          centerTitle: true,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.white),
+            onPressed: () {
+              // Manually trigger the same logic as system back press
+              _handlePopAttempt();
+            },
+          ),
         ),
-      ),
-      body: _isLoadingData
-          ? Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(AppColors.secondary)),
-              const SizedBox(height: 20),
-              Text('Loading profile...', style: Theme.of(context).textTheme.bodyMedium),
-            ],
-          ))
-          : _isSubmitting
-          ? _buildLoadingIndicator()
-          : _buildForm(),
-    );
-  }
-
-  Widget _buildLoadingIndicator() {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(AppColors.secondary)),
-          SizedBox(height: 20),
-          Text('Submitting your details...',),
-        ],
+        body: _isLoadingData
+            ? const Center(child: LoadingIndicator(color: AppColors.secondary, size: 50))
+            : _buildFormContent(), // Your existing method
+        bottomNavigationBar: _isSubmitting || _isLoadingData ? null : _buildSubmitButtonContainer(), // Your existing bottom bar
       ),
     );
   }
 
-  Widget _buildForm() {
+  Widget _buildFormContent() {
     return SingleChildScrollView(
       controller: _scrollController,
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 80.0), // Padding for FAB
       child: Form(
         key: _formKey,
         child: Column(
@@ -339,80 +341,102 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
           children: [
             _buildProfileImagePicker(),
             const SizedBox(height: 24),
-            _buildSectionTitle("Basic Information"),
+            _buildSectionTitle("Basic Information", Icons.person_pin_rounded),
             _buildSpecialtyDropdown(),
             const SizedBox(height: 16),
-            _buildQualificationsInput(),
+            CustomTextField(controller: _qualificationsController, labelText: 'Qualifications', hintText: 'e.g., MBBS, MD, FCPS', prefixIcon: Icons.school_outlined, validator: (val) => val!.isEmpty ? 'Required' : null),
             const SizedBox(height: 16),
-            _buildExperienceInput(),
+            CustomTextField(controller: _yearsOfExperienceController, labelText: 'Years of Experience', hintText: 'e.g., 5', prefixIcon: Icons.work_history_outlined, keyboardType: TextInputType.number, validator: (val) {
+              if (val!.isEmpty) return 'Required';
+              if (int.tryParse(val) == null || int.parse(val) < 0 || int.parse(val) > 70) return 'Invalid (0-70)';
+              return null;
+            }),
             const SizedBox(height: 16),
-            _buildLicenseInput(),
+            CustomTextField(controller: _licenseNumberController, labelText: 'Medical License Number', hintText: 'Official license/registration no.', prefixIcon: Icons.verified_user_outlined, validator: (val) => val!.isEmpty ? 'Required' : (val.length < 3 ? 'Too short' : null)),
             const SizedBox(height: 16),
-            _buildInstitutionsInput(),
+            CustomTextField(controller: _affiliatedInstitutionsController, labelText: 'Affiliated Institutions (Optional)', hintText: 'e.g., City Hospital', prefixIcon: Icons.business_outlined),
             const SizedBox(height: 16),
-            _buildConsultationFeeInput(),
+            CustomTextField(controller: _consultationFeeController, labelText: 'Consultation Fee (PKR)', hintText: 'e.g., 1500', prefixIcon: Icons.price_check_outlined, keyboardType: TextInputType.number, validator: (val) {
+              if (val!.isEmpty) return 'Required';
+              if (double.tryParse(val) == null || double.parse(val) < 0 || double.parse(val) > 50000) return 'Invalid (0-50000)';
+              return null;
+            }),
+
             const SizedBox(height: 24),
-            _buildSectionTitle("Communication"),
+            _buildSectionTitle("Communication", Icons.language_rounded),
             _buildLanguagesSelection(),
+
             const SizedBox(height: 24),
-            _buildSectionTitle("About Me"),
-            _buildAboutInput(),
+            _buildSectionTitle("About Me", Icons.info_outline_rounded),
+            CustomTextField(controller: _aboutController, labelText: 'Bio (Min 100 chars)', hintText: 'Share your experience, approach to patient care, etc.', prefixIcon: null, maxLines: 6, validator: (val) {
+              if (val!.isEmpty) return 'Please write something about yourself';
+              if (val.length < 100) return 'Please write at least 100 characters';
+              return null;
+            }),
+
             const SizedBox(height: 24),
-            _buildSectionTitle("Availability Schedule"),
+            _buildSectionTitle("Availability Schedule", Icons.event_available_rounded),
             _buildAvailabilitySection(),
-            const SizedBox(height: 32),
-            _buildSubmitButton(),
+
+            const SizedBox(height: 32), // Space before potential submit button if not in bottom bar
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSectionTitle(String title) {
+  Widget _buildSectionTitle(String title, IconData icon) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0, top: 8.0),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleLarge?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w600),
+      padding: const EdgeInsets.only(bottom: 16.0, top: 8.0),
+      child: Row(
+        children: [
+          Icon(icon, color: AppColors.primary, size: 24),
+          const SizedBox(width: 10),
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w600),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildProfileImagePicker() {
-    String? existingImageUrl = _profileData['profileImageUrl'] as String?;
     return Center(
       child: Stack(
+        alignment: Alignment.bottomRight,
         children: [
           Container(
-            width: 130,
-            height: 130,
+            width: 140,
+            height: 140,
             decoration: BoxDecoration(
-              color: AppColors.light,
               shape: BoxShape.circle,
-              border: Border.all(color: AppColors.primary, width: 2.5),
+              border: Border.all(color: AppColors.primary.withOpacity(0.5), width: 3),
+              boxShadow: [
+                BoxShadow(color: Colors.grey.withOpacity(0.3), spreadRadius: 2, blurRadius: 5, offset: const Offset(0, 3)),
+              ],
             ),
             child: ClipOval(
-              child: _profileImage != null
-                  ? Image.file(_profileImage!, fit: BoxFit.cover)
-                  : (existingImageUrl != null && existingImageUrl.isNotEmpty)
-                  ? Image.network(existingImageUrl, fit: BoxFit.cover,
-                loadingBuilder: (context, child, progress) => progress == null ? child : const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                errorBuilder: (context, error, stack) => Icon(Icons.person, size: 70, color: AppColors.primary.withOpacity(0.5)),
+              child: _profileImageFile != null
+                  ? Image.file(_profileImageFile!, fit: BoxFit.cover)
+                  : (_existingProfileImageUrl != null && _existingProfileImageUrl!.isNotEmpty)
+                  ? Image.network(
+                _existingProfileImageUrl!,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, progress) => progress == null ? child : const Center(child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.secondary)),
+                errorBuilder: (context, error, stack) => Icon(Icons.person, size: 80, color: AppColors.primary.withOpacity(0.6)),
               )
-                  : Icon(Icons.person_add_alt_1, size: 70, color: AppColors.primary.withOpacity(0.5)),
+                  : Icon(Icons.person_add_alt_1_rounded, size: 80, color: AppColors.primary.withOpacity(0.6)),
             ),
           ),
-          Positioned(
-            bottom: 5,
-            right: 5,
-            child: CircleAvatar(
-              backgroundColor: AppColors.primary,
-              radius: 20,
-              child: IconButton(
-                icon: const Icon(Icons.camera_alt, size: 20, color: AppColors.white),
-                onPressed: _pickImage,
-              ),
-            ),
+          MaterialButton(
+            onPressed: _pickImage,
+            color: AppColors.secondary,
+            textColor: AppColors.white,
+            padding: const EdgeInsets.all(10),
+            shape: const CircleBorder(),
+            elevation: 2.0,
+            child: const Icon(Icons.camera_alt, size: 22),
           ),
         ],
       ),
@@ -421,8 +445,15 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
 
   Widget _buildSpecialtyDropdown() {
     return DropdownButtonFormField<String>(
-      value: _selectedSpecialty.isNotEmpty && _specialtiesList.contains(_selectedSpecialty) ? _selectedSpecialty : null,
-      decoration: _getInputDecoration('Medical Specialty', 'Select your specialty', Icons.medical_services_outlined),
+      value: _selectedSpecialty,
+      decoration: InputDecoration(
+        labelText: 'Medical Specialty *',
+        prefixIcon: const Icon(Icons.medical_services_outlined, color: AppColors.secondary),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        filled: true,
+        fillColor: AppColors.white,
+        labelStyle: TextStyle(color: AppColors.dark.withOpacity(0.9)),
+      ),
       items: _specialtiesList.map((String specialty) {
         return DropdownMenuItem(value: specialty, child: Text(specialty));
       }).toList(),
@@ -430,71 +461,7 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
         if (newValue != null) setState(() => _selectedSpecialty = newValue);
       },
       validator: (value) => value == null || value.isEmpty ? 'Please select your specialty' : null,
-      onSaved: (value) => _selectedSpecialty = value ?? '',
-    );
-  }
-
-  Widget _buildQualificationsInput() {
-    return TextFormField(
-      controller: _qualificationsController,
-      decoration: _getInputDecoration('Qualifications', 'e.g., MBBS, MD, FCPS', Icons.school_outlined),
-      validator: (value) => value == null || value.isEmpty ? 'Please enter your qualifications' : null,
-      textInputAction: TextInputAction.next,
-    );
-  }
-
-  Widget _buildExperienceInput() {
-    return TextFormField(
-      controller: _yearsOfExperienceController,
-      decoration: _getInputDecoration('Years of Experience', 'Enter total years of practice', Icons.work_history_outlined),
-      keyboardType: TextInputType.number,
-      validator: (value) {
-        if (value == null || value.isEmpty) return 'Please enter years of experience';
-        final years = int.tryParse(value);
-        if (years == null) return 'Please enter a valid number.';
-        if (years < 0 || years > 70) return 'Please enter a valid number of years (0-70)';
-        return null;
-      },
-      textInputAction: TextInputAction.next,
-    );
-  }
-
-  Widget _buildLicenseInput() {
-    return TextFormField(
-      controller: _licenseNumberController,
-      decoration: _getInputDecoration('Medical License Number', 'Enter official license/registration no.', Icons.verified_user_outlined),
-      validator: (value) {
-        if (value == null || value.isEmpty) return 'Please enter your license number';
-        if (value.length < 3) return 'License number seems too short';
-        return null;
-      },
-      textInputAction: TextInputAction.next,
-      textCapitalization: TextCapitalization.characters,
-    );
-  }
-
-  Widget _buildInstitutionsInput() {
-    return TextFormField(
-      controller: _affiliatedInstitutionsController,
-      decoration: _getInputDecoration('Affiliated Institutions (Optional)', 'e.g., City Hospital, Medical Center', Icons.business_outlined),
-      textInputAction: TextInputAction.next,
-    );
-  }
-
-  Widget _buildConsultationFeeInput() {
-    return TextFormField(
-      controller: _consultationFeeController,
-      decoration: _getInputDecoration('Consultation Fee (PKR)', 'Enter fee per session', Icons.price_check_outlined).copyWith(prefixText: 'Rs. '),
-      keyboardType: TextInputType.number,
-      validator: (value) {
-        if (value == null || value.isEmpty) return 'Please enter consultation fee';
-        final fee = double.tryParse(value);
-        if (fee == null) return 'Please enter a valid amount';
-        if (fee < 0) return 'Fee cannot be negative';
-        if (fee > 50000) return 'Fee seems too high (max Rs 50000)';
-        return null;
-      },
-      textInputAction: TextInputAction.next,
+      isExpanded: true,
     );
   }
 
@@ -502,15 +469,15 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Languages Spoken', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.dark.withOpacity(0.8))),
-        const SizedBox(height: 8),
+        Text('Languages Spoken *', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.dark.withOpacity(0.85), fontWeight: FontWeight.w500)),
+        const SizedBox(height: 10),
         Wrap(
-          spacing: 8,
-          runSpacing: 4,
+          spacing: 10,
+          runSpacing: 8,
           children: _availableLanguagesList.map((language) {
             final isSelected = _selectedLanguages.contains(language);
             return FilterChip(
-              label: Text(language, style: TextStyle(color: isSelected ? AppColors.primary : AppColors.dark)),
+              label: Text(language, style: TextStyle(color: isSelected ? AppColors.white : AppColors.primary, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
               selected: isSelected,
               onSelected: (bool selected) {
                 setState(() {
@@ -521,45 +488,25 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
                   }
                 });
               },
-              backgroundColor: AppColors.light,
-              selectedColor: AppColors.secondary.withOpacity(0.3),
-              checkmarkColor: AppColors.primary,
+              backgroundColor: isSelected ? AppColors.primary.withOpacity(0.2) : AppColors.light,
+              selectedColor: AppColors.primary,
+              checkmarkColor: AppColors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(20),
                   side: BorderSide(color: isSelected ? AppColors.primary : AppColors.gray.withOpacity(0.5))
               ),
+              elevation: isSelected ? 2 : 0,
             );
           }).toList(),
         ),
-        if (_formKey.currentState?.validate() == true && _selectedLanguages.isEmpty && _isSubmitting) // Show validation error for languages only after first submit attempt
-          Padding(
-            padding: const EdgeInsets.only(top: 8.0),
-            child: Text('Please select at least one language.', style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
-          ),
       ],
-    );
-  }
-
-  Widget _buildAboutInput() {
-    return TextFormField(
-      controller: _aboutController,
-      decoration: _getInputDecoration('About Yourself (Min 100 chars)', 'Share your experience, approach to patient care, etc.', Icons.info_outline)
-          .copyWith(alignLabelWithHint: true, contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16)),
-      maxLines: 6,
-      maxLength: 600,
-      validator: (value) {
-        if (value == null || value.isEmpty) return 'Please write something about yourself';
-        if (value.length < 100) return 'Please write at least 100 characters';
-        return null;
-      },
-      textInputAction: TextInputAction.done,
     );
   }
 
   Widget _buildAvailabilitySection() {
     return Column(
-      children: _availability.entries.map((entry) {
-        return _buildDayAvailabilityRow(entry.key, entry.value);
+      children: _daysOfWeek.map((day) {
+        return _buildDayAvailabilityRow(day, _availability[day] ?? []);
       }).toList(),
     );
   }
@@ -567,10 +514,10 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
   Widget _buildDayAvailabilityRow(String day, List<Map<String, TimeOfDay?>> slots) {
     return Card(
       elevation: 1.5,
-      margin: const EdgeInsets.symmetric(vertical: 6.0),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -579,18 +526,18 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
               children: [
                 Text(day, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: AppColors.dark)),
                 TextButton.icon(
-                  icon: Icon(Icons.add_alarm_outlined, color: AppColors.primary, size: 18),
-                  label: const Text('Add Time Range', style: TextStyle(color: AppColors.primary)),
-                  onPressed: () => _addTimeRange(day),
-                  style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                  icon: const Icon(Icons.add_alarm_outlined, color: AppColors.secondary, size: 20),
+                  label: const Text('Add Slot', style: TextStyle(color: AppColors.secondary, fontWeight: FontWeight.w600)),
+                  onPressed: () => _addTimeRangeDialog(day),
+                  style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
                 ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             if (slots.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8.0),
-                child: Text('Not available on $day', style: TextStyle(color: AppColors.gray.withOpacity(0.8), fontStyle: FontStyle.italic)),
+                child: Text('Not available on $day.', style: TextStyle(color: AppColors.gray, fontStyle: FontStyle.italic)),
               )
             else
               ListView.builder(
@@ -602,24 +549,24 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
                   final startStr = range['start']?.format(context) ?? 'N/A';
                   final endStr = range['end']?.format(context) ?? 'N/A';
                   return Container(
-                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                    margin: const EdgeInsets.only(bottom: 8),
                     decoration: BoxDecoration(
-                        color: AppColors.light.withOpacity(0.7),
-                        borderRadius: BorderRadius.circular(6),
+                        color: AppColors.light.withOpacity(0.8),
+                        borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: AppColors.primary.withOpacity(0.2))
                     ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Icon(Icons.access_time, color: AppColors.secondary, size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(child: Text('$startStr - $endStr', style: const TextStyle(fontWeight: FontWeight.w500))),
+                        const Icon(Icons.access_time_filled_rounded, color: AppColors.secondary, size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(child: Text('$startStr - $endStr', style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 15))),
                         IconButton(
-                          icon: Icon(Icons.remove_circle_outline, color: AppColors.error.withOpacity(0.8), size: 22),
+                          icon: Icon(Icons.remove_circle_outline_rounded, color: AppColors.error.withOpacity(0.8), size: 22),
                           onPressed: () => _removeTimeRange(day, index),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
+                          tooltip: "Remove slot",
                         ),
                       ],
                     ),
@@ -632,57 +579,45 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
     );
   }
 
-  Future<void> _addTimeRange(String day) async {
-    TimeOfDay initialStartTime = const TimeOfDay(hour: 9, minute: 0);
-    // If there are existing slots for the day, suggest start time after the last end time
-    if (_availability[day]!.isNotEmpty) {
-      final lastSlot = _availability[day]!.last;
-      if (lastSlot['end'] != null) {
-        initialStartTime = TimeOfDay(hour: (lastSlot['end']!.hour + 1) % 24, minute: 0);
-      }
-    }
+  Future<void> _addTimeRangeDialog(String day) async {
+    TimeOfDay? startTime;
+    TimeOfDay? endTime;
 
-
-    TimeOfDay? startTime = await showTimePicker(
-        context: context,
-        initialTime: initialStartTime,
-        helpText: 'SELECT START TIME FOR $day',
-        builder: (context, child) {
-          return Theme(data: Theme.of(context).copyWith(
-              timePickerTheme: TimePickerThemeData(
-                  backgroundColor: AppColors.light,
-                  hourMinuteTextColor: AppColors.primary,
-                  entryModeIconColor: AppColors.secondary,
-                  dayPeriodTextColor: AppColors.primary,
-                  dialHandColor: AppColors.secondary,
-                  dialTextColor: AppColors.dark,
-                  helpTextStyle: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)
-              )
-          ), child: child!);
-        }
+    // Show Start Time Picker
+    startTime = await showTimePicker(
+      context: context,
+      initialTime: _availability[day]!.isNotEmpty && _availability[day]!.last['end'] != null
+          ? TimeOfDay(hour: (_availability[day]!.last['end']!.hour + 1) % 24, minute: 0) // Suggest start after last end time
+          : const TimeOfDay(hour: 9, minute: 0),
+      helpText: 'SELECT START TIME FOR $day',
+      builder: (context, child) => Theme(data: Theme.of(context).copyWith(
+          timePickerTheme: TimePickerThemeData(
+              backgroundColor: AppColors.light, hourMinuteTextColor: AppColors.primary,
+              entryModeIconColor: AppColors.secondary, dayPeriodTextColor: AppColors.primary,
+              dialHandColor: AppColors.secondary, dialTextColor: AppColors.dark,
+              helpTextStyle: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)
+          )), child: child!),
     );
+
     if (startTime == null || !mounted) return;
 
-    TimeOfDay? endTime = await showTimePicker(
-        context: context,
-        initialTime: TimeOfDay(hour: (startTime.hour + 1) % 24, minute: startTime.minute),
-        helpText: 'SELECT END TIME FOR $day',
-        builder: (context, child) { // Consistent theming
-          return Theme(data: Theme.of(context).copyWith(
-              timePickerTheme: TimePickerThemeData(
-                  backgroundColor: AppColors.light,
-                  hourMinuteTextColor: AppColors.primary,
-                  entryModeIconColor: AppColors.secondary,
-                  dayPeriodTextColor: AppColors.primary,
-                  dialHandColor: AppColors.secondary,
-                  dialTextColor: AppColors.dark,
-                  helpTextStyle: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)
-              )
-          ), child: child!);
-        }
+    // Show End Time Picker
+    endTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: (startTime.hour + 1) % 24, minute: startTime.minute),
+      helpText: 'SELECT END TIME FOR $day',
+      builder: (context, child) => Theme(data: Theme.of(context).copyWith(
+          timePickerTheme: TimePickerThemeData(
+              backgroundColor: AppColors.light, hourMinuteTextColor: AppColors.primary,
+              entryModeIconColor: AppColors.secondary, dayPeriodTextColor: AppColors.primary,
+              dialHandColor: AppColors.secondary, dialTextColor: AppColors.dark,
+              helpTextStyle: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)
+          )), child: child!),
     );
+
     if (endTime == null || !mounted) return;
 
+    // Validation
     final startMinutes = startTime.hour * 60 + startTime.minute;
     final endMinutes = endTime.hour * 60 + endTime.minute;
 
@@ -693,7 +628,7 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
       return;
     }
 
-    // Check for overlaps with existing ranges for the same day
+    // Check for overlaps
     for (var existingRange in _availability[day]!) {
       final existingStart = existingRange['start']!;
       final existingEnd = existingRange['end']!;
@@ -708,12 +643,11 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
       }
     }
 
-
     setState(() {
       _availability[day]!.add({'start': startTime, 'end': endTime});
+      // Sort slots by start time
       _availability[day]!.sort((a, b) {
-        final aStart = a['start']!;
-        final bStart = b['start']!;
+        final aStart = a['start']!; final bStart = b['start']!;
         return (aStart.hour * 60 + aStart.minute).compareTo(bStart.hour * 60 + bStart.minute);
       });
     });
@@ -727,47 +661,58 @@ class _DoctorProfessionalDetailsState extends State<DoctorProfessionalDetails> {
     }
   }
 
-  Widget _buildSubmitButton() {
-    return SizedBox(
-      width: double.infinity,
+  // Method to handle the pop attempt
+  Future<void> _handlePopAttempt() async {
+    bool? shouldPop = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Exit Profile Setup?'),
+        content: const Text('Your changes will not be saved. Are you sure you want to exit?'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false), // Don't pop
+            child: const Text('Cancel', style: TextStyle(color: AppColors.gray)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),  // Confirm pop
+            child: const Text('Exit', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldPop == true && mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+            (Route<dynamic> route) => false,
+      );
+    }
+  }
+
+  Widget _buildSubmitButtonContainer() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        boxShadow: [
+          BoxShadow(color: Colors.grey.withOpacity(0.2), spreadRadius: 0, blurRadius: 5, offset: const Offset(0, -2)),
+        ],
+      ),
       child: ElevatedButton.icon(
         icon: _isSubmitting ? Container() : const Icon(Icons.save_alt_outlined, color: AppColors.white),
         label: _isSubmitting
             ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 3, valueColor: AlwaysStoppedAnimation<Color>(AppColors.white)))
-            : Text('Save Profile Details', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: AppColors.white, fontSize: 16)),
+            : Text('Save Profile Details', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: AppColors.white, fontSize: 17, fontWeight: FontWeight.bold)),
         onPressed: _isSubmitting ? null : _saveData,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           elevation: 3,
+          minimumSize: const Size(double.infinity, 50),
         ),
       ),
-    );
-  }
-
-  InputDecoration _getInputDecoration(String label, String hint, IconData icon) {
-    return InputDecoration(
-      labelText: label.isNotEmpty ? label : null,
-      hintText: hint,
-      prefixIcon: Icon(icon, color: AppColors.secondary, size: 20),
-      labelStyle: TextStyle(color: AppColors.dark.withOpacity(0.9)),
-      hintStyle: TextStyle(color: AppColors.gray),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: AppColors.gray.withOpacity(0.5)),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: AppColors.gray.withOpacity(0.6)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-      ),
-      filled: true,
-      fillColor: AppColors.white, // Or AppColors.light.withOpacity(0.5)
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
     );
   }
 }

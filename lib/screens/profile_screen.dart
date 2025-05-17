@@ -1,3 +1,6 @@
+// lib/screens/profile_screen.dart
+// ignore_for_file: use_build_context_synchronously, library_private_types_in_public_api
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -6,10 +9,12 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
 
-import '../theme.dart';
+import 'package:p1/theme.dart';
+import 'package:p1/widgets/custom_textfield.dart'; // Assuming your CustomTextField
+import 'package:p1/widgets/loading_indicator.dart'; // Assuming your LoadingIndicator
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({Key? key}) : super(key: key);
+  const ProfileScreen({super.key});
 
   @override
   _ProfileScreenState createState() => _ProfileScreenState();
@@ -21,40 +26,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final FirebaseStorage _storage = FirebaseStorage.instance;
 
   bool _isLoading = true;
+  bool _isSaving = false;
   bool _isEditing = false;
   String _userRole = '';
   Map<String, dynamic> _userData = {};
-  Map<String, dynamic> _profileData = {};
+  Map<String, dynamic> _profileData = {}; // Role-specific data
   File? _imageFile;
   final ImagePicker _picker = ImagePicker();
   final _formKey = GlobalKey<FormState>();
 
-  // Controllers for common fields
+  // Common Controllers
   final TextEditingController _nicknameController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController(); // Display only
   final TextEditingController _countryController = TextEditingController();
 
-  // Controllers for doctor fields
-  final TextEditingController _aboutController = TextEditingController();
-  final TextEditingController _specialtyController = TextEditingController();
+  // Doctor Specific Controllers
+  String? _selectedDoctorSpecialty; // For Dropdown
   final TextEditingController _qualificationsController = TextEditingController();
-  final TextEditingController _affiliatedInstitutionsController = TextEditingController();
-  final TextEditingController _licenseNumberController = TextEditingController();
   final TextEditingController _yearsOfExperienceController = TextEditingController();
+  final TextEditingController _licenseNumberController = TextEditingController();
+  final TextEditingController _affiliatedInstitutionsController = TextEditingController();
   final TextEditingController _consultationFeeController = TextEditingController();
-  final TextEditingController _languagesController = TextEditingController();
+  final TextEditingController _aboutDoctorController = TextEditingController();
+  List<String> _selectedDoctorLanguages = []; // For FilterChips
 
-  // Controllers for patient fields
+  // Patient Specific Controllers (Simplified for profile editing)
   final TextEditingController _ageController = TextEditingController();
-  final TextEditingController _chronicConditionsController = TextEditingController();
-  final TextEditingController _currentMedicationsController = TextEditingController();
-  final TextEditingController _familyHealthHistoryController = TextEditingController();
-  final TextEditingController _knownAllergiesController = TextEditingController();
-  final TextEditingController _medicationHistoryController = TextEditingController();
-  final TextEditingController _physicalActivityLevelController = TextEditingController();
-  final TextEditingController _sleepPatternController = TextEditingController();
-  final TextEditingController _smokingIntensityController = TextEditingController();
-  final TextEditingController _stressLevelController = TextEditingController();
+  final TextEditingController _genderController = TextEditingController(); // Patient gender
+  // Simplified text fields for patient health summary in profile edit
+  final TextEditingController _patientMedicalSummaryController = TextEditingController();
+  final TextEditingController _patientLifestyleSummaryController = TextEditingController();
+
+
+  // Predefined lists (can be moved to a constants file)
+  final List<String> _doctorSpecialtiesList = [
+    'Cardiology', 'Dermatology', 'Endocrinology', 'Family Medicine', 'Gastroenterology',
+    'Neurology', 'Obstetrics & Gynecology', 'Pediatrics', 'Psychiatry', 'Orthopedics',
+    'Ophthalmology', 'Pulmonology', 'Urology', 'Other'
+  ];
+  final List<String> _availableLanguagesList = [
+    'English', 'Spanish', 'French', 'German', 'Chinese (Mandarin)', 'Arabic', 'Hindi', 'Urdu', 'Portuguese', 'Russian', 'Japanese', 'Swahili'
+  ];
+  final List<String> _genderOptions = ['Male', 'Female', 'Prefer not to say', 'Other'];
+
 
   @override
   void initState() {
@@ -64,486 +78,299 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   void dispose() {
-    // Dispose all controllers
     _nicknameController.dispose();
     _emailController.dispose();
     _countryController.dispose();
-    _aboutController.dispose();
-    _specialtyController.dispose();
     _qualificationsController.dispose();
-    _affiliatedInstitutionsController.dispose();
-    _licenseNumberController.dispose();
     _yearsOfExperienceController.dispose();
+    _licenseNumberController.dispose();
+    _affiliatedInstitutionsController.dispose();
     _consultationFeeController.dispose();
-    _languagesController.dispose();
+    _aboutDoctorController.dispose();
     _ageController.dispose();
-    _chronicConditionsController.dispose();
-    _currentMedicationsController.dispose();
-    _familyHealthHistoryController.dispose();
-    _knownAllergiesController.dispose();
-    _medicationHistoryController.dispose();
-    _physicalActivityLevelController.dispose();
-    _sleepPatternController.dispose();
-    _smokingIntensityController.dispose();
-    _stressLevelController.dispose();
+    _genderController.dispose();
+    _patientMedicalSummaryController.dispose();
+    _patientLifestyleSummaryController.dispose();
     super.dispose();
   }
 
   Future<void> _loadUserData() async {
-    setState(() {
-      _isLoading = true;
-    });
+    debugPrint("[ProfileScreen] Loading user data...");
+    setState(() => _isLoading = true);
+    final User? user = _auth.currentUser;
+    if (user == null) {
+      if (mounted) setState(() => _isLoading = false);
+      debugPrint("[ProfileScreen] User not logged in.");
+      return;
+    }
 
     try {
-      final User? user = _auth.currentUser;
+      DocumentSnapshot userDoc = await _firestore.collection('users').doc(user.uid).get();
+      if (mounted && userDoc.exists) {
+        _userData = userDoc.data() as Map<String, dynamic>;
+        _userRole = _userData['role'] ?? '';
+        debugPrint("[ProfileScreen] User data from 'users': $_userData");
 
-      if (user != null) {
-        // Get user basic info
-        final userDoc = await _firestore.collection('users').doc(user.uid).get();
+        _nicknameController.text = _userData['nickname'] ?? '';
+        _emailController.text = _userData['email'] ?? '';
+        _countryController.text = _userData['country'] ?? '';
 
-        if (userDoc.exists) {
-          _userData = userDoc.data() as Map<String, dynamic>;
-          _userRole = _userData['role'] ?? '';
+        if (_userRole == 'Doctor') {
+          DocumentSnapshot doctorDoc = await _firestore.collection('doctors').doc(user.uid).get();
+          if (mounted && doctorDoc.exists) {
+            _profileData = doctorDoc.data() as Map<String, dynamic>;
+            debugPrint("[ProfileScreen] Doctor data from 'doctors': $_profileData");
+            _selectedDoctorSpecialty = _profileData['specialty'];
+            _qualificationsController.text = _profileData['qualifications'] ?? '';
+            _yearsOfExperienceController.text = (_profileData['yearsOfExperience'] ?? '').toString();
+            _licenseNumberController.text = _profileData['licenseNumber'] ?? '';
+            _affiliatedInstitutionsController.text = _profileData['affiliatedInstitutions'] ?? '';
+            _consultationFeeController.text = (_profileData['consultationFee']?.toStringAsFixed(0) ?? '');
+            _aboutDoctorController.text = _profileData['about'] ?? '';
+            _selectedDoctorLanguages = List<String>.from(_profileData['languages'] ?? []);
+          }
+        } else if (_userRole == 'Patient') {
+          DocumentSnapshot patientDoc = await _firestore.collection('patients').doc(user.uid).get();
+          if (mounted && patientDoc.exists) {
+            _profileData = patientDoc.data() as Map<String, dynamic>;
+            debugPrint("[ProfileScreen] Patient data from 'patients': $_profileData");
+            _ageController.text = (_profileData['basicInfo']?['age'] ?? _profileData['age'] ?? '').toString(); // Handle both structures
+            _genderController.text = _profileData['basicInfo']?['gender'] ?? _profileData['gender'] ?? '';
 
-          // Set controllers for common fields
-          _nicknameController.text = _userData['nickname'] ?? '';
-          _emailController.text = _userData['email'] ?? '';
-          _countryController.text = _userData['country'] ?? '';
+            // Populate summary fields (these are for display/simple edit, full details in questionnaire)
+            final healthProfile = _profileData['healthProfile'] as Map<String, dynamic>? ?? {};
+            _patientMedicalSummaryController.text = [
+              (healthProfile['chronicConditionsSelected'] as List<dynamic>? ?? []).join(', '),
+              healthProfile['chronicConditionsOther'],
+              (healthProfile['allergiesDetails'] ?? ''),
+              (healthProfile['surgicalHistoryDetails'] ?? ''),
+              (healthProfile['currentMedicationsDetails'] ?? '')
+            ].where((s) => s != null && s.isNotEmpty).join('; ');
 
-          // Get role-specific data
-          if (_userRole == 'Doctor') {
-            final doctorDoc = await _firestore.collection('doctors').doc(user.uid).get();
-            if (doctorDoc.exists) {
-              _profileData = doctorDoc.data() as Map<String, dynamic>;
 
-              // Set controllers for doctor fields
-              _aboutController.text = _profileData['about'] ?? '';
-              _specialtyController.text = _profileData['specialty'] ?? '';
-              _qualificationsController.text = _profileData['qualifications'] ?? '';
-              _affiliatedInstitutionsController.text = _profileData['affiliatedInstitutions'] ?? '';
-              _licenseNumberController.text = _profileData['licenseNumber'] ?? '';
-              _yearsOfExperienceController.text = _profileData['yearsOfExperience']?.toString() ?? '';
-              _consultationFeeController.text = _profileData['consultationFee']?.toString() ?? '';
-              _languagesController.text = (_profileData['languages'] as List<dynamic>?)?.join(', ') ?? '';
-            }
-          } else if (_userRole == 'Patient') {
-            final patientDoc = await _firestore.collection('patients').doc(user.uid).get();
-            if (patientDoc.exists) {
-              _profileData = patientDoc.data() as Map<String, dynamic>;
+            final lifestyleHabits = _profileData['lifestyleHabits'] as Map<String, dynamic>? ?? {};
+            _patientLifestyleSummaryController.text = [
+              lifestyleHabits['smokingStatus'],
+              lifestyleHabits['alcoholConsumption'],
+              lifestyleHabits['physicalActivityLevel'],
+              lifestyleHabits['sleepDuration'],
+              lifestyleHabits['stressLevel']
+            ].where((s) => s != null && s.isNotEmpty).join('; ');
 
-              // Set controllers for patient fields
-              _ageController.text = _profileData['age']?.toString() ?? '';
-              _chronicConditionsController.text = _profileData['chronicConditions'] ?? '';
-              _currentMedicationsController.text = _profileData['currentMedications'] ?? '';
-              _familyHealthHistoryController.text = _profileData['familyHealthHistory'] ?? '';
-              _knownAllergiesController.text = _profileData['knownAllergies'] ?? '';
-              _medicationHistoryController.text = _profileData['medicationHistory'] ?? '';
-              _physicalActivityLevelController.text = _profileData['physicalActivityLevel'] ?? '';
-              _sleepPatternController.text = _profileData['sleepPattern'] ?? '';
-              _smokingIntensityController.text = _profileData['smokingIntensity'] ?? '';
-              _stressLevelController.text = _profileData['stressLevel'] ?? '';
-            }
           }
         }
+      } else {
+        debugPrint("[ProfileScreen] User document not found in 'users' collection.");
+        if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User data not found.'), backgroundColor: AppColors.error));
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error loading profile: $e'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      debugPrint("[ProfileScreen] Error loading user data: $e");
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error loading profile: ${e.toString()}'), backgroundColor: AppColors.error));
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _pickImage() async {
-    final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery);
-
-    if (pickedFile != null) {
-      setState(() {
-        _imageFile = File(pickedFile.path);
-      });
+    try {
+      final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70, maxWidth: 1024, maxHeight: 1024);
+      if (pickedFile != null) {
+        if (mounted) setState(() => _imageFile = File(pickedFile.path));
+        debugPrint("[ProfileScreen] Image picked: ${pickedFile.path}");
+      } else {
+        debugPrint("[ProfileScreen] Image picking cancelled.");
+      }
+    } catch (e) {
+      debugPrint("[ProfileScreen] Error picking image: $e");
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error picking image: ${e.toString()}"), backgroundColor: AppColors.error));
     }
   }
 
   Future<String?> _uploadImage() async {
-    if (_imageFile == null) return null;
-
-    try {
-      final String uid = _auth.currentUser!.uid;
-      final Reference storageRef = _storage.ref().child('profile_images').child('$uid.jpg');
-
-      await storageRef.putFile(_imageFile!);
-      return await storageRef.getDownloadURL();
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error uploading image: $e'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+    if (_imageFile == null) {
+      debugPrint("[ProfileScreen _uploadImage] No new image file selected. Returning existing URL if any.");
+      return _userData['profileImageUrl'] as String?; // Return existing URL from 'users' collection
+    }
+    final User? user = _auth.currentUser;
+    if (user == null) {
+      debugPrint("[ProfileScreen _uploadImage] User not logged in. Cannot upload.");
       return null;
     }
-  }
 
-  Future<void> _saveChanges() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() {
-      _isLoading = true;
-    });
+    // Using a consistent name for the profile image to overwrite.
+    // Alternatively, use a unique name if you want to keep old images, but then you need to manage deletion.
+    final String imagePath = 'profile_images/${user.uid}/profile.jpg';
+    final storageRef = _storage.ref().child(imagePath);
+    debugPrint("[ProfileScreen _uploadImage] Attempting to upload to: $imagePath");
 
     try {
-      final String uid = _auth.currentUser!.uid;
-      String? profileImageUrl;
-
-      // Upload image if selected
-      if (_imageFile != null) {
-        profileImageUrl = await _uploadImage();
-      }
-
-      // Update user data in 'users' collection
-      await _firestore.collection('users').doc(uid).update({
-        'nickname': _nicknameController.text,
-        'nickname_lowercase': _nicknameController.text.toLowerCase(),
-        'country': _countryController.text,
-      });
-
-      // Update role-specific data
-      if (_userRole == 'Doctor') {
-        final Map<String, dynamic> doctorData = {
-          'nickname': _nicknameController.text,
-          'nickname_lowercase': _nicknameController.text.toLowerCase(),
-          'about': _aboutController.text,
-          'specialty': _specialtyController.text,
-          'qualifications': _qualificationsController.text,
-          'affiliatedInstitutions': _affiliatedInstitutionsController.text,
-          'licenseNumber': _licenseNumberController.text,
-          'yearsOfExperience': int.tryParse(_yearsOfExperienceController.text) ?? 0,
-          'consultationFee': int.tryParse(_consultationFeeController.text) ?? 0,
-          'languages': _languagesController.text.split(',').map((e) => e.trim()).toList(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        };
-
-        if (profileImageUrl != null) {
-          doctorData['profileImageUrl'] = profileImageUrl;
-        } else if (_profileData.containsKey('profileImageUrl')) { // Retain existing image if not changed
-          doctorData['profileImageUrl'] = _profileData['profileImageUrl'];
-        }
-
-
-        await _firestore.collection('doctors').doc(uid).update(doctorData);
-      } else if (_userRole == 'Patient') {
-        final Map<String, dynamic> patientData = {
-          'age': int.tryParse(_ageController.text) ?? 0,
-          'chronicConditions': _chronicConditionsController.text,
-          'currentMedications': _currentMedicationsController.text,
-          'familyHealthHistory': _familyHealthHistoryController.text,
-          'knownAllergies': _knownAllergiesController.text,
-          'medicationHistory': _medicationHistoryController.text,
-          'physicalActivityLevel': _physicalActivityLevelController.text,
-          'sleepPattern': _sleepPatternController.text,
-          'smokingIntensity': _smokingIntensityController.text,
-          'stressLevel': _stressLevelController.text,
-          'timestamp': FieldValue.serverTimestamp(),
-        };
-
-        if (profileImageUrl != null) {
-          patientData['profileImageUrl'] = profileImageUrl;
-        }
-
-        await _firestore.collection('patients').doc(uid).update(patientData);
-      }
-
-      // Reload data to reflect changes
-      await _loadUserData();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Profile updated successfully'),
-          backgroundColor: AppColors.success,
-        ),
+      UploadTask uploadTask = storageRef.putFile(
+        _imageFile!,
+        SettableMetadata(contentType: 'image/jpeg'), // Specify content type
       );
 
-      setState(() {
-        _isEditing = false;
-        _imageFile = null;
-      });
+      TaskSnapshot snapshot = await uploadTask.whenComplete(() => {});
+      debugPrint("[ProfileScreen _uploadImage] UploadTask state: ${snapshot.state}");
+
+      if (snapshot.state == TaskState.success) {
+        final String downloadUrl = await snapshot.ref.getDownloadURL();
+        debugPrint("[ProfileScreen _uploadImage] Image uploaded successfully. URL: $downloadUrl");
+        return downloadUrl;
+      } else {
+        debugPrint("[ProfileScreen _uploadImage] Image upload failed. State: ${snapshot.state}, Error: ${snapshot.storage.bucket}"); // More error info
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Image upload failed. Firebase state: ${snapshot.state}'), backgroundColor: AppColors.error),
+          );
+        }
+        return _userData['profileImageUrl'] as String?; // Return old URL on failure
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error updating profile: $e'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      debugPrint("[ProfileScreen _uploadImage] Exception during image upload: $e");
+      if (e is FirebaseException && e.code == 'object-not-found') {
+        debugPrint("[ProfileScreen _uploadImage] 'object-not-found' specifically caught. This is unusual after a putFile if the path is new or correctly overwritten. Possible causes: incorrect path used for getDownloadURL vs putFile, or permissions issue.");
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error uploading image: ${e.toString()}'), backgroundColor: AppColors.error),
+        );
+      }
+      return _userData['profileImageUrl'] as String?; // Return old URL on failure
     }
   }
 
-  Widget _buildProfileImage() {
-    final String? profileImageUrl = _profileData['profileImageUrl'];
-    final double imageSize = 120;
 
-    return GestureDetector(
-      onTap: _isEditing ? _pickImage : null,
+  Future<void> _saveChanges() async {
+    if (!_formKey.currentState!.validate()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please correct the errors in the form.'), backgroundColor: AppColors.error),
+      );
+      return;
+    }
+    _formKey.currentState!.save();
+    debugPrint("[ProfileScreen] Saving changes...");
+    setState(() => _isSaving = true);
+
+    final User? user = _auth.currentUser;
+    if (user == null) {
+      if (mounted) setState(() => _isSaving = false);
+      debugPrint("[ProfileScreen] User not logged in. Cannot save.");
+      return;
+    }
+
+    try {
+      final String? newProfileImageUrl = await _uploadImage(); // This will return existing if _imageFile is null
+
+      Map<String, dynamic> userDataToUpdate = {
+        'nickname': _nicknameController.text.trim(),
+        'nickname_lowercase': _nicknameController.text.trim().toLowerCase(),
+        'country': _countryController.text.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        if (newProfileImageUrl != null) 'profileImageUrl': newProfileImageUrl,
+      };
+      // If newProfileImageUrl is null AND _imageFile was null, it means we keep the existing one (implicitly not changing it in Firestore if not in map).
+      // If newProfileImageUrl is null because upload failed but _imageFile was not null, we don't update the URL.
+      // If _imageFile was null, _uploadImage returns existing URL, so it's fine to include it if not null.
+
+
+      await _firestore.collection('users').doc(user.uid).set(userDataToUpdate, SetOptions(merge: true));
+      debugPrint("[ProfileScreen] Updated 'users' collection.");
+
+      if (_userRole == 'Doctor') {
+        Map<String, dynamic> doctorDataToUpdate = {
+          'nickname': _nicknameController.text.trim(),
+          'nickname_lowercase': _nicknameController.text.trim().toLowerCase(),
+          'specialty': _selectedDoctorSpecialty,
+          'qualifications': _qualificationsController.text.trim(),
+          'yearsOfExperience': int.tryParse(_yearsOfExperienceController.text.trim()) ?? _profileData['yearsOfExperience'] ?? 0,
+          'licenseNumber': _licenseNumberController.text.trim(),
+          'affiliatedInstitutions': _affiliatedInstitutionsController.text.trim(),
+          'consultationFee': double.tryParse(_consultationFeeController.text.trim()) ?? _profileData['consultationFee'] ?? 0.0,
+          'about': _aboutDoctorController.text.trim(),
+          'languages': _selectedDoctorLanguages,
+          'updatedAt': FieldValue.serverTimestamp(),
+          if (newProfileImageUrl != null) 'profileImageUrl': newProfileImageUrl,
+        };
+        await _firestore.collection('doctors').doc(user.uid).set(doctorDataToUpdate, SetOptions(merge: true));
+        debugPrint("[ProfileScreen] Updated 'doctors' collection.");
+      } else if (_userRole == 'Patient') {
+        Map<String, dynamic> patientDataToUpdate = {
+          'basicInfo': { // Assuming you want to maintain this structure
+            'age': int.tryParse(_ageController.text.trim()) ?? (_profileData['basicInfo']?['age'] ?? _profileData['age'] ?? 0),
+            'gender': _genderController.text.trim().isNotEmpty ? _genderController.text.trim() : (_profileData['basicInfo']?['gender'] ?? _profileData['gender']),
+          },
+          // For simplified profile edit, we might just update a summary text or specific editable fields.
+          // The complex healthProfile and lifestyleHabits are better managed via their dedicated questionnaire.
+          // Here we update what's editable on this screen.
+          // For demonstration, let's assume some simple fields are directly in 'patients' doc:
+          'age': int.tryParse(_ageController.text.trim()) ?? (_profileData['age'] ?? 0), // Storing age directly too
+          'gender': _genderController.text.trim().isNotEmpty ? _genderController.text.trim() : _profileData['gender'], // Storing gender directly too
+          'medicalSummary': _patientMedicalSummaryController.text.trim(), // Example summary field
+          'lifestyleSummary': _patientLifestyleSummaryController.text.trim(), // Example summary field
+          'lastUpdated': FieldValue.serverTimestamp(),
+          if (newProfileImageUrl != null) 'profileImageUrl': newProfileImageUrl,
+        };
+        await _firestore.collection('patients').doc(user.uid).set(patientDataToUpdate, SetOptions(merge: true));
+        debugPrint("[ProfileScreen] Updated 'patients' collection.");
+      }
+
+      await _loadUserData(); // Refresh data on screen
+      if (mounted) {
+        setState(() {
+          _isEditing = false;
+          _imageFile = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile updated successfully!'), backgroundColor: AppColors.success),
+        );
+      }
+    } catch (e) {
+      debugPrint("[ProfileScreen] Error saving profile: $e");
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error updating profile: ${e.toString()}'), backgroundColor: AppColors.error));
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Widget _buildProfileImageWidget() {
+    final String? currentImageUrl = _userData['profileImageUrl'] as String?; // Prioritize 'users' doc for image
+    debugPrint("[ProfileScreen _buildProfileImageWidget] Current Image URL: $currentImageUrl, _imageFile: ${_imageFile?.path}");
+
+    return Center(
       child: Stack(
+        alignment: Alignment.bottomRight,
         children: [
           Container(
-            width: imageSize,
-            height: imageSize,
+            width: 130, height: 130,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(
-                color: AppColors.primary,
-                width: 2,
-              ),
+              border: Border.all(color: AppColors.primary, width: 2.5),
+              color: AppColors.light.withOpacity(0.5), // Fallback background
             ),
             child: ClipOval(
               child: _imageFile != null
-                  ? Image.file(
-                _imageFile!,
-                fit: BoxFit.cover,
-              )
-                  : (profileImageUrl != null && profileImageUrl.isNotEmpty)
+                  ? Image.file(_imageFile!, fit: BoxFit.cover, width: 130, height: 130)
+                  : (currentImageUrl != null && currentImageUrl.isNotEmpty)
                   ? CachedNetworkImage(
-                imageUrl: profileImageUrl,
-                fit: BoxFit.cover,
-                placeholder: (context, url) => const CircularProgressIndicator(),
-                errorWidget: (context, url, error) => const Icon(
-                  Icons.person,
-                  size: 80,
-                  color: AppColors.gray,
-                ),
+                imageUrl: currentImageUrl,
+                fit: BoxFit.cover, width: 130, height: 130,
+                placeholder: (context, url) => const LoadingIndicator(size: 30),
+                errorWidget: (context, url, error) {
+                  debugPrint("[ProfileScreen] CachedNetworkImage error for URL $currentImageUrl: $error");
+                  return Icon(Icons.person, size: 70, color: AppColors.primary.withOpacity(0.5));
+                },
               )
-                  : const Icon(
-                Icons.person,
-                size: 80,
-                color: AppColors.gray,
-              ),
+                  : Icon(Icons.person, size: 70, color: AppColors.primary.withOpacity(0.5)),
             ),
           ),
           if (_isEditing)
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: const BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.camera_alt,
-                  color: AppColors.white,
-                  size: 20,
-                ),
-              ),
+            MaterialButton(
+              onPressed: _pickImage,
+              color: AppColors.secondary, textColor: AppColors.white,
+              padding: const EdgeInsets.all(8), shape: const CircleBorder(), elevation: 2.0,
+              child: const Icon(Icons.camera_alt, size: 20),
             ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildCommonFields() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle('Basic Information'),
-        _buildTextField(
-          controller: _nicknameController,
-          label: 'Nickname',
-          icon: Icons.person,
-          enabled: _isEditing,
-        ),
-        _buildTextField(
-          controller: _emailController,
-          label: 'Email',
-          icon: Icons.email,
-          enabled: false, // Email should not be editable
-        ),
-        _buildTextField(
-          controller: _countryController,
-          label: 'Country',
-          icon: Icons.location_on,
-          enabled: _isEditing,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDoctorFields() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle('Professional Information'),
-        _buildTextField(
-          controller: _specialtyController,
-          label: 'Specialty',
-          icon: Icons.medical_services,
-          enabled: _isEditing,
-        ),
-        _buildTextField(
-          controller: _qualificationsController,
-          label: 'Qualifications',
-          icon: Icons.school,
-          enabled: _isEditing,
-        ),
-        _buildTextField(
-          controller: _affiliatedInstitutionsController,
-          label: 'Affiliated Institutions',
-          icon: Icons.business,
-          enabled: _isEditing,
-        ),
-        _buildTextField(
-          controller: _licenseNumberController,
-          label: 'License Number',
-          icon: Icons.badge,
-          enabled: _isEditing,
-        ),
-        _buildTextField(
-          controller: _yearsOfExperienceController,
-          label: 'Years of Experience',
-          icon: Icons.timer,
-          enabled: _isEditing,
-          keyboardType: TextInputType.number,
-        ),
-        _buildTextField(
-          controller: _consultationFeeController,
-          label: 'Consultation Fee',
-          icon: Icons.attach_money,
-          enabled: _isEditing,
-          keyboardType: TextInputType.number,
-        ),
-        _buildTextField(
-          controller: _languagesController,
-          label: 'Languages (comma separated)',
-          icon: Icons.language,
-          enabled: _isEditing,
-        ),
-        _buildSectionTitle('About Me'),
-        _buildTextField(
-          controller: _aboutController,
-          label: 'About',
-          icon: Icons.info,
-          enabled: _isEditing,
-          maxLines: 5,
-        ),
-        if (!_isEditing) ...[
-          _buildSectionTitle('Statistics'),
-          _buildInfoItem(
-            label: 'Rating',
-            value: '${_profileData['rating'] ?? 0} / 5',
-            icon: Icons.star,
-          ),
-          _buildInfoItem(
-            label: 'Total Reviews',
-            value: '${_profileData['totalReviews'] ?? 0}',
-            icon: Icons.reviews,
-          ),
-          _buildInfoItem(
-            label: 'Status',
-            value: '${_profileData['status'] ?? 'Offline'}',
-            icon: Icons.circle,
-            valueColor: _profileData['status'] == 'online' ? AppColors.success : AppColors.gray,
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildPatientFields() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle('Personal Health Information'),
-        _buildTextField(
-          controller: _ageController,
-          label: 'Age',
-          icon: Icons.cake,
-          enabled: _isEditing,
-          keyboardType: TextInputType.number,
-        ),
-        _buildTextField(
-          controller: _physicalActivityLevelController,
-          label: 'Physical Activity Level',
-          icon: Icons.directions_run,
-          enabled: _isEditing,
-        ),
-        _buildTextField(
-          controller: _sleepPatternController,
-          label: 'Sleep Pattern',
-          icon: Icons.nightlight,
-          enabled: _isEditing,
-        ),
-        _buildTextField(
-          controller: _stressLevelController,
-          label: 'Stress Level',
-          icon: Icons.psychology,
-          enabled: _isEditing,
-        ),
-        _buildTextField(
-          controller: _smokingIntensityController,
-          label: 'Smoking Intensity',
-          icon: Icons.smoking_rooms,
-          enabled: _isEditing,
-        ),
-        _buildSectionTitle('Medical History'),
-        _buildTextField(
-          controller: _chronicConditionsController,
-          label: 'Chronic Conditions',
-          icon: Icons.monitor_heart,
-          enabled: _isEditing,
-          maxLines: 3,
-        ),
-        _buildTextField(
-          controller: _currentMedicationsController,
-          label: 'Current Medications',
-          icon: Icons.medication,
-          enabled: _isEditing,
-          maxLines: 3,
-        ),
-        _buildTextField(
-          controller: _medicationHistoryController,
-          label: 'Medication History',
-          icon: Icons.history,
-          enabled: _isEditing,
-          maxLines: 3,
-        ),
-        _buildTextField(
-          controller: _knownAllergiesController,
-          label: 'Known Allergies',
-          icon: Icons.dangerous,
-          enabled: _isEditing,
-          maxLines: 3,
-        ),
-        _buildTextField(
-          controller: _familyHealthHistoryController,
-          label: 'Family Health History',
-          icon: Icons.people,
-          enabled: _isEditing,
-          maxLines: 3,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16.0),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-          color: AppColors.primary,
-        ),
       ),
     );
   }
@@ -551,78 +378,234 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
-    required IconData icon,
+    IconData? icon,
     bool enabled = true,
     int maxLines = 1,
     TextInputType keyboardType = TextInputType.text,
+    String? Function(String?)? validator,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16.0),
-      child: TextFormField(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: CustomTextField( // Using your CustomTextField
         controller: controller,
+        labelText: label,
+        prefixIcon: icon,
         enabled: enabled,
         maxLines: maxLines,
         keyboardType: keyboardType,
-        decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: Icon(icon, color: AppColors.primary),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: AppColors.gray),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: AppColors.primary),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: AppColors.secondary, width: 2),
-          ),
-          filled: true,
-          fillColor: enabled ? AppColors.white : AppColors.light,
-        ),
-        style: TextStyle(
-          color: enabled ? AppColors.dark : AppColors.gray,
-        ),
-        validator: (value) {
-          if (value == null || value.isEmpty) {
-            return 'Please enter $label';
-          }
+        validator: enabled ? (validator ?? (value) { // Only validate if enabled
+          if (value == null || value.isEmpty) return 'Please enter $label';
           return null;
-        },
+        }) : null,
       ),
     );
   }
 
-  Widget _buildInfoItem({
-    required String label,
-    required String value,
-    required IconData icon,
-    Color? valueColor,
-  }) {
+  Widget _buildDisplayField({required String label, required String value, IconData? icon}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
+      padding: const EdgeInsets.symmetric(vertical: 10.0),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: AppColors.primary, size: 20),
-          const SizedBox(width: 8),
-          Text(
-            '$label:',
-            style: const TextStyle(
-              fontWeight: FontWeight.w500,
-              color: AppColors.dark,
+          if (icon != null) Icon(icon, color: AppColors.primary, size: 20),
+          if (icon != null) const SizedBox(width: 12),
+          Expanded(
+            flex: 2,
+            child: Text(
+              "$label:",
+              style: TextStyle(fontSize: 15, color: AppColors.dark.withOpacity(0.7), fontWeight: FontWeight.w500),
             ),
           ),
-          const SizedBox(width: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: valueColor ?? AppColors.dark,
+          Expanded(
+            flex: 3,
+            child: Text(
+              value.isNotEmpty ? value : "N/A",
+              style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w500, color: AppColors.dark),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 24.0, bottom: 10.0),
+      child: Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w600)),
+    );
+  }
+
+  // --- Edit Forms ---
+  Widget _buildDoctorEditForm() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle("Basic Information"),
+        _buildTextField(controller: _nicknameController, label: "Nickname", icon: Icons.person_outline_rounded),
+        _buildTextField(controller: _countryController, label: "Country", icon: Icons.flag_outlined),
+        _buildTextField(controller: _emailController, label: "Email (Cannot Change)", icon: Icons.email_outlined, enabled: false),
+
+        _buildSectionTitle("Professional Details"),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: DropdownButtonFormField<String>(
+            value: _selectedDoctorSpecialty,
+            decoration: InputDecoration(labelText: 'Medical Specialty *', prefixIcon: Icon(Icons.medical_services_outlined, color: AppColors.secondary), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))),
+            items: _doctorSpecialtiesList.map((String specialty) => DropdownMenuItem(value: specialty, child: Text(specialty))).toList(),
+            onChanged: (String? newValue) => setState(() => _selectedDoctorSpecialty = newValue),
+            validator: (value) => value == null || value.isEmpty ? 'Please select specialty' : null,
+          ),
+        ),
+        _buildTextField(controller: _qualificationsController, label: "Qualifications (e.g., MBBS, MD)", icon: Icons.school_outlined),
+        _buildTextField(controller: _yearsOfExperienceController, label: "Years of Experience", icon: Icons.work_history_outlined, keyboardType: TextInputType.number,
+            validator: (val) {
+              if (val == null || val.isEmpty) return 'Required';
+              if (int.tryParse(val) == null || int.parse(val) < 0 || int.parse(val) > 70) return 'Invalid (0-70)';
+              return null;
+            }),
+        _buildTextField(controller: _licenseNumberController, label: "Medical License Number", icon: Icons.verified_user_outlined),
+        _buildTextField(controller: _affiliatedInstitutionsController, label: "Affiliated Institutions", icon: Icons.business_outlined, validator: null), // Optional
+        _buildTextField(controller: _consultationFeeController, label: "Consultation Fee (PKR)", icon: Icons.price_check_outlined, keyboardType: TextInputType.number,
+            validator: (val) {
+              if (val == null || val.isEmpty) return 'Required';
+              if (double.tryParse(val) == null || double.parse(val) < 0 || double.parse(val) > 50000) return 'Invalid (0-50000)';
+              return null;
+            }),
+        _buildTextField(controller: _aboutDoctorController, label: "About Yourself (Min 100 chars)", icon: Icons.info_outline_rounded, maxLines: 4,
+            validator: (val) {
+              if (val == null || val.isEmpty) return 'Please write something about yourself';
+              if (val.length < 100) return 'Min 100 characters required';
+              return null;
+            }),
+
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: Text("Languages Spoken *", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: AppColors.dark.withOpacity(0.8))),
+        ),
+        Wrap(
+          spacing: 8.0, runSpacing: 4.0,
+          children: _availableLanguagesList.map((language) {
+            final isSelected = _selectedDoctorLanguages.contains(language);
+            return FilterChip(
+              label: Text(language, style: TextStyle(color: isSelected ? AppColors.white : AppColors.primary)),
+              selected: isSelected,
+              onSelected: (bool selected) {
+                setState(() {
+                  if (selected) {
+                    if (!_selectedDoctorLanguages.contains(language)) _selectedDoctorLanguages.add(language);
+                  } else {
+                    _selectedDoctorLanguages.remove(language);
+                  }
+                });
+              },
+              selectedColor: AppColors.primary,
+              checkmarkColor: AppColors.white,
+              backgroundColor: AppColors.light,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: isSelected ? AppColors.primary : AppColors.gray.withOpacity(0.5))),
+            );
+          }).toList(),
+        ),
+        if (_selectedDoctorLanguages.isEmpty && _formKey.currentState != null && !_formKey.currentState!.validate()) // Show error if trying to save with no language
+          Padding(
+            padding: const EdgeInsets.only(top: 8.0),
+            child: Text("Please select at least one language.", style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
+          ),
+
+      ],
+    );
+  }
+
+  Widget _buildPatientEditForm() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle("Basic Information"),
+        _buildTextField(controller: _nicknameController, label: "Nickname", icon: Icons.person_outline_rounded),
+        _buildTextField(controller: _countryController, label: "Country", icon: Icons.flag_outlined),
+        _buildTextField(controller: _emailController, label: "Email (Cannot Change)", icon: Icons.email_outlined, enabled: false),
+        _buildTextField(controller: _ageController, label: "Age", icon: Icons.cake_outlined, keyboardType: TextInputType.number,
+            validator: (val) {
+              if (val == null || val.isEmpty) return 'Required';
+              if (int.tryParse(val) == null || int.parse(val) <= 0 || int.parse(val) > 120) return 'Valid age (1-120)';
+              return null;
+            }),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: DropdownButtonFormField<String>(
+            // controller: _genderController, // Dropdown doesn't use controller directly for value
+            value: _genderController.text.isNotEmpty && _genderOptions.contains(_genderController.text) ? _genderController.text : null,
+            decoration: InputDecoration(labelText: 'Gender *', prefixIcon: Icon(Icons.wc_rounded, color: AppColors.secondary), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))),
+            items: _genderOptions.map((String gender) => DropdownMenuItem(value: gender, child: Text(gender))).toList(),
+            onChanged: (String? newValue) => setState(() {
+              if(newValue != null) _genderController.text = newValue;
+            }),
+            validator: (value) => (value == null || value.isEmpty) ? 'Please select gender' : null,
+          ),
+        ),
+
+        _buildSectionTitle("Health & Lifestyle Summary"),
+        _buildTextField(controller: _patientMedicalSummaryController, label: "Medical Summary (Conditions, Allergies, Meds)", icon: Icons.medical_information_outlined, maxLines: 3, validator: null), // Optional
+        _buildTextField(controller: _patientLifestyleSummaryController, label: "Lifestyle Summary (Diet, Activity, Sleep)", icon: Icons.spa_outlined, maxLines: 3, validator: null), // Optional
+        Padding(
+          padding: const EdgeInsets.only(top:12.0),
+          child: Text("For detailed updates, please use the Health Questionnaire.", style: TextStyle(fontSize: 13, color: AppColors.gray, fontStyle: FontStyle.italic)),
+        )
+      ],
+    );
+  }
+
+  // --- Display Views (Non-Editing) ---
+  Widget _buildDoctorDisplayView() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle("Basic Information"),
+        _buildDisplayField(label: "Email", value: _userData['email'] ?? '', icon: Icons.email_outlined),
+        _buildDisplayField(label: "Country", value: _userData['country'] ?? '', icon: Icons.flag_outlined),
+
+        _buildSectionTitle("Professional Details"),
+        _buildDisplayField(label: "Specialty", value: _profileData['specialty'] ?? 'N/A', icon: Icons.medical_services_outlined),
+        _buildDisplayField(label: "Qualifications", value: _profileData['qualifications'] ?? 'N/A', icon: Icons.school_outlined),
+        _buildDisplayField(label: "Experience", value: "${_profileData['yearsOfExperience'] ?? 0} years", icon: Icons.work_history_outlined),
+        _buildDisplayField(label: "License No.", value: _profileData['licenseNumber'] ?? 'N/A', icon: Icons.verified_user_outlined),
+        _buildDisplayField(label: "Affiliations", value: _profileData['affiliatedInstitutions'] ?? 'N/A', icon: Icons.business_outlined),
+        _buildDisplayField(label: "Fee", value: "PKR ${_profileData['consultationFee']?.toStringAsFixed(0) ?? 'N/A'}", icon: Icons.price_check_outlined),
+        _buildDisplayField(label: "Languages", value: (_profileData['languages'] as List<dynamic>?)?.join(', ') ?? 'N/A', icon: Icons.language_outlined),
+
+        _buildSectionTitle("About Me"),
+        Padding(
+          padding: const EdgeInsets.only(left: 8.0, top: 4.0),
+          child: Text(_profileData['about'] ?? 'No information provided.', style: TextStyle(fontSize: 15, color: AppColors.dark.withOpacity(0.85), height: 1.45)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPatientDisplayView() {
+    // Use a temporary variable from _profileData if basicInfo is nested
+    final ageFromProfile = _profileData['basicInfo']?['age'] ?? _profileData['age'];
+    final genderFromProfile = _profileData['basicInfo']?['gender'] ?? _profileData['gender'];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle("Basic Information"),
+        _buildDisplayField(label: "Email", value: _userData['email'] ?? '', icon: Icons.email_outlined),
+        _buildDisplayField(label: "Country", value: _userData['country'] ?? '', icon: Icons.flag_outlined),
+        _buildDisplayField(label: "Age", value: (ageFromProfile ?? 'N/A').toString(), icon: Icons.cake_outlined),
+        _buildDisplayField(label: "Gender", value: (genderFromProfile ?? 'N/A').toString(), icon: Icons.wc_rounded),
+
+        _buildSectionTitle("Health & Lifestyle Summary"),
+        _buildDisplayField(label: "Medical Summary", value: _patientMedicalSummaryController.text.isNotEmpty ? _patientMedicalSummaryController.text : (_profileData['medicalSummary'] ?? 'Not specified'), icon: Icons.medical_information_outlined),
+        _buildDisplayField(label: "Lifestyle Summary", value: _patientLifestyleSummaryController.text.isNotEmpty ? _patientLifestyleSummaryController.text : (_profileData['lifestyleSummary'] ?? 'Not specified'), icon: Icons.spa_outlined),
+        Padding(
+          padding: const EdgeInsets.only(top: 16.0),
+          child: Text(
+            "Note: This is a summary. For detailed health information or updates, please fill out the complete Health Questionnaire from the welcome screen if you haven't already.",
+            style: TextStyle(fontStyle: FontStyle.italic, color: AppColors.gray, fontSize: 13),
+          ),
+        ),
+      ],
     );
   }
 
@@ -630,101 +613,75 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Profile',
-          style: TextStyle(
-            color: AppColors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        title: Text(_isEditing ? 'Edit Profile' : 'My Profile', style: const TextStyle(color: AppColors.white, fontWeight: FontWeight.bold)),
         backgroundColor: AppColors.primary,
+        iconTheme: const IconThemeData(color: AppColors.white), // For back button if navigated to
+        elevation: 2,
+        leading: _isEditing ? IconButton(
+          icon: const Icon(Icons.close, color: AppColors.white),
+          onPressed: () {
+            setState(() {
+              _isEditing = false;
+              _imageFile = null;
+              _loadUserData(); // Revert changes by reloading
+            });
+          },
+        ) : null,
         actions: [
-          if (!_isLoading)
-            IconButton(
-              icon: Icon(_isEditing ? Icons.close : Icons.edit),
-              onPressed: () {
-                setState(() {
-                  if (_isEditing) {
-                    // Revert changes
-                    _loadUserData();
-                    _isEditing = false;
-                    _imageFile = null;
-                  } else {
-                    _isEditing = true;
-                  }
-                });
-              },
-              color: AppColors.white,
-            ),
-          if (_isEditing && !_isLoading)
-            IconButton(
-              icon: const Icon(Icons.save),
+          if (!_isLoading && !_isSaving)
+            _isEditing
+                ? TextButton(
               onPressed: _saveChanges,
-              color: AppColors.white,
+              child: const Text('SAVE', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+            )
+                : IconButton(
+              icon: const Icon(Icons.edit_outlined, color: AppColors.white),
+              onPressed: () => setState(() => _isEditing = true),
+              tooltip: "Edit Profile",
+            ),
+          if (_isSaving)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+              child: SizedBox(width:20, height: 20, child: CircularProgressIndicator(color: AppColors.white, strokeWidth: 2.5)),
             ),
         ],
       ),
       body: _isLoading
-          ? const Center(
-        child: CircularProgressIndicator(
-          color: AppColors.primary,
-        ),
-      )
-          : SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Profile Picture and Role
-              Center(
-                child: Column(
-                  children: [
-                    _buildProfileImage(),
-                    const SizedBox(height: 12),
-                    Text(
-                      _userData['nickname'] ?? '',
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.dark,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        _userRole,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.white,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                  ],
+          ? const Center(child: LoadingIndicator(message: "Loading profile..."))
+          : RefreshIndicator(
+        onRefresh: _loadUserData,
+        color: AppColors.primary,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildProfileImageWidget(),
+                const SizedBox(height: 16),
+                Center(
+                  child: Text(
+                    _isEditing ? _nicknameController.text : (_userData['nickname'] ?? 'User'),
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: AppColors.dark),
+                  ),
                 ),
-              ),
-
-              _buildCommonFields(),
-
-              // Role-specific fields
-              if (_userRole == 'Doctor')
-                _buildDoctorFields()
-              else if (_userRole == 'Patient')
-                _buildPatientFields(),
-
-              const SizedBox(height: 40),
-            ],
+                Center(
+                  child: Chip(
+                    label: Text(_userRole, style: const TextStyle(color: AppColors.secondary, fontWeight: FontWeight.w500)),
+                    backgroundColor: AppColors.secondary.withOpacity(0.1),
+                    avatar: Icon(_userRole == 'Doctor' ? Icons.medical_services_rounded : Icons.person_rounded, color: AppColors.secondary, size: 18),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                if (_isEditing)
+                  _userRole == 'Doctor' ? _buildDoctorEditForm() : _buildPatientEditForm()
+                else
+                  _userRole == 'Doctor' ? _buildDoctorDisplayView() : _buildPatientDisplayView(),
+                const SizedBox(height: 30),
+              ],
+            ),
           ),
         ),
       ),
