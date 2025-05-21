@@ -31,6 +31,14 @@ CureAI is a comprehensive healthcare application designed to assist patients wit
 
 CureAI aims to provide users with an intelligent platform for discussing health concerns. Patients can interact with an AI chatbot for initial guidance, get potential diagnostic insights (which are explicitly not a substitute for professional medical advice), and connect with registered doctors for consultations via chat and video calls. Doctors can manage their profiles, availability, and appointments.
 
+## 📸 Some Application Screenshots
+
+<img src="Screen Shots of the Application/Screenshot_20250517_224045.png" width="300" alt="Home Screen"/>
+<img src="Screen Shots of the Application/Screenshot_20250517_224231.png" width="300" alt="Doctors"/>
+<img src="Screen Shots of the Application/Screenshot_20250517_224412.png" width="300" alt="Chat Screen"/>
+<img src="Screen Shots of the Application/Screenshot_20250517_224501.png" width="300" alt="Profile"/>
+
+
 ## Features
 
 ### Patient Features
